@@ -169,4 +169,18 @@ export class AuthRepository {
       return user;
     });
   }
+
+  public adminPhc(userId: string) {
+    return this.prisma.adminProfile.findUnique({
+      where: { userId },
+      select: { phcId: true },
+    });
+  }
+
+  public village(id: string) {
+    return this.prisma.village.findUnique({
+      where: { id },
+      select: { id: true, phcId: true, isActive: true },
+    });
+  }
 }

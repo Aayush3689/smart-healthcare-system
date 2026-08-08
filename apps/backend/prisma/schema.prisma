@@ -4,8 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // Prisma 6 still requires this field during schema validation. The CLI URL
-  // and migration settings are configured in ../prisma.config.ts.
   url      = env("DATABASE_URL")
 }
 
@@ -17,6 +15,11 @@ enum Role {
 
 enum UserStatus {
   INVITED
+  ACTIVE
+  INACTIVE
+}
+
+enum PhcStatus {
   ACTIVE
   INACTIVE
 }
@@ -33,110 +36,167 @@ enum Platform {
   ADMIN_DASHBOARD
 }
 
+enum AssessmentInputSource {
+  MANUAL
+  OCR
+  VOICE
+  MIXED
+}
+
+enum Disease {
+  DIABETES
+  HEART_DISEASE
+  HYPERTENSION
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum OcrStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  NOT_APPLICABLE
+}
+
+enum ReferralPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ReferralStatus {
+  PENDING
+  RECEIVED
+  ACCEPTED
+  ASSIGNED
+  IN_PROGRESS
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum AssignmentStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  COMPLETED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+  RESCHEDULED
+}
+
+enum FollowUpStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  MISSED
+  CANCELLED
+}
+
+enum NotificationType {
+  REFERRAL_ASSIGNED
+  APPOINTMENT_SCHEDULED
+  APPOINTMENT_REMINDER
+  FOLLOW_UP_REMINDER
+  HIGH_PRIORITY_CASE
+  PHC_ANNOUNCEMENT
+}
+
+enum SyncOperationType {
+  CREATE
+  UPDATE
+  DELETE
+}
+
+enum SyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+enum Smoking_Status {
+  NON_SMOKER @map("Non-Smoker")
+  SMOKER     @map("Smoker")
+}
+
+enum BP_History {
+  Normal
+  Hypertension
+  Prehypertension
+}
+
+enum Medication {
+  NONE
+  ACE_INHIBITOR
+  BETA_BLOCKER
+  DIURETIC
+  OTHER
+}
+
+enum ClinicalNoteStatus {
+  DRAFT
+  FINAL
+}
+
+enum Exercise_Level {
+  Low
+  Moderate
+  High
+}
+
 model User {
   id              String     @id @default(uuid())
   email           String     @unique
   role            Role
   status          UserStatus @default(INVITED)
   isEmailVerified Boolean    @default(false)
-  invitedById     String?
-  invitedBy       User?      @relation("UserInvitations", fields: [invitedById], references: [id], onDelete: SetNull)
-  invitedUsers    User[]     @relation("UserInvitations")
-  lastLoginAt     DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
 
-  ashaProfile      AshaWorkerProfile?
-  doctorProfile    DoctorProfile?
-  adminProfile     AdminProfile?
-  refreshTokens    RefreshToken[]
-  otpVerifications OtpVerification[]
+  invitedById  String?
+  invitedBy    User?   @relation("UserInvitations", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers User[]  @relation("UserInvitations")
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  ashaProfile   AshaWorkerProfile?
+  doctorProfile DoctorProfile?
+  adminProfile  AdminProfile?
+
+  refreshTokens      RefreshToken[]
+  otpVerifications   OtpVerification[]
+  uploadedDocuments  PatientDocument[]
+  createdReferrals   Referral[]
+  assignmentsMade    DoctorAssignment[]
+  notifications      Notification[]
+  auditLogs          AuditLog[]
+  referralHistory    ReferralHistory[]
+  appointmentHistory AppointmentHistory[]
+  followUpHistory    FollowUpHistory[]
 
   @@index([role, status])
   @@map("users")
 }
 
-model AshaWorkerProfile {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName     String
-  employeeCode String   @unique
-  villageId    String
-  village      Village  @relation(fields: [villageId], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@index([villageId])
-  @@map("asha_worker_profiles")
-}
-
-model DoctorProfile {
-  id             String               @id @default(uuid())
-  userId         String               @unique
-  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName       String
-  specialization String?
-  phcId          String
-  phc            PrimaryHealthCentre @relation(fields: [phcId], references: [id])
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
-
-  @@index([phcId])
-  @@map("doctor_profiles")
-}
-
-model AdminProfile {
-  id        String               @id @default(uuid())
-  userId    String               @unique
-  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  fullName  String
-  phcId     String
-  phc       PrimaryHealthCentre @relation(fields: [phcId], references: [id])
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-
-  @@index([phcId])
-  @@map("admin_profiles")
-}
-
-model PrimaryHealthCentre {
-  id        String               @id @default(uuid())
-  name      String
-  code      String               @unique
-  address   String
-  district  String
-  state     String
-  phone     String?
-  villages  Village[]
-  doctors   DoctorProfile[]
-  admins    AdminProfile[]
-  createdAt DateTime             @default(now())
-  updatedAt DateTime             @updatedAt
-
-  @@map("primary_health_centres")
-}
-
-model Village {
-  id          String                 @id @default(uuid())
-  name        String
-  district    String
-  state       String
-  population  Int?
-  phcId       String?
-  phc         PrimaryHealthCentre?  @relation(fields: [phcId], references: [id])
-  ashaWorkers AshaWorkerProfile[]
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
-
-  @@index([phcId])
-  @@map("villages")
-}
-
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   tokenHash String    @unique
   platform  Platform
   deviceId  String?
@@ -149,9 +209,10 @@ model RefreshToken {
 }
 
 model OtpVerification {
-  id         String    @id @default(uuid())
-  userId     String?
-  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String  @id @default(uuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   email      String
   otpHash    String
   attempts   Int       @default(0)
@@ -161,4 +222,665 @@ model OtpVerification {
 
   @@index([email])
   @@map("otp_verifications")
+}
+
+model PrimaryHealthCentre {
+  id       String    @id @default(uuid())
+  name     String
+  code     String    @unique
+  address  String
+  district String
+  state    String
+  phone    String?
+  status   PhcStatus @default(ACTIVE)
+
+  villages Village[]
+  doctors  DoctorProfile[]
+  admins   AdminProfile[]
+
+  recommendedReferrals Referral[]    @relation("ReferralRecommendedPhc")
+  assignedReferrals    Referral[]    @relation("ReferralAssignedPhc")
+  appointments         Appointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("primary_health_centres")
+}
+
+model Village {
+  id         String  @id @default(uuid())
+  name       String
+  district   String
+  state      String
+  population Int?
+  isActive   Boolean @default(true)
+
+  phcId String?
+  phc   PrimaryHealthCentre? @relation(fields: [phcId], references: [id])
+
+  ashaWorkers AshaWorkerProfile[]
+  patients    Patient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phcId])
+  @@index([phcId, isActive])
+  @@map("villages")
+}
+
+model AshaWorkerProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName     String
+  employeeCode String @unique
+
+  villageId String
+  village   Village @relation(fields: [villageId], references: [id])
+
+  registeredPatients Patient[]
+  assessments        Assessment[]
+  followUpsAssigned  FollowUp[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([villageId])
+  @@map("asha_worker_profiles")
+}
+
+model DoctorProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName       String
+  specialization String?
+
+  phcId String
+  phc   PrimaryHealthCentre @relation(fields: [phcId], references: [id])
+
+  clinicalNotes     ClinicalNote[]
+  doctorAssignments DoctorAssignment[]
+  appointments      Appointment[]
+  followUps         FollowUp[]
+  availability      DoctorAvailability?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phcId])
+  @@map("doctor_profiles")
+}
+
+model DoctorAvailability {
+  id String @id @default(uuid())
+
+  doctorId String        @unique
+  doctor   DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  schedule Json
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("doctor_availability")
+}
+
+model AdminProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName String
+
+  phcId String
+  phc   PrimaryHealthCentre @relation(fields: [phcId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phcId])
+  @@map("admin_profiles")
+}
+
+model Patient {
+  id String @id @default(uuid())
+
+  fullName    String
+  dateOfBirth DateTime
+  gender      Gender
+  phone       String?
+  address     String?
+
+  villageId String
+  village   Village @relation(fields: [villageId], references: [id])
+
+  registeredById String
+  registeredBy   AshaWorkerProfile @relation(fields: [registeredById], references: [id])
+
+  emergencyContactName     String?
+  emergencyContactPhone    String?
+  emergencyContactRelation String?
+
+  assessments   Assessment[]
+  clinicalNotes ClinicalNote[]
+  documents     PatientDocument[]
+  referrals     Referral[]
+  appointments  Appointment[]
+  followUps     FollowUp[]
+
+  deviceId        String?
+  clientCreatedAt DateTime
+  syncedAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([villageId])
+  @@index([registeredById])
+  @@map("patients")
+}
+
+model Assessment {
+  id String @id @default(uuid())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  conductedById String
+  conductedBy   AshaWorkerProfile @relation(fields: [conductedById], references: [id])
+
+  age      Int
+  weightKg Float?
+  heightCm Float?
+  bmi      Float?
+
+  pregnancies              Int?
+  glucose                  Float?
+  diabetesBloodPressure    Int?
+  skinThickness            Float?
+  insulin                  Float?
+  diabetesPedigreeFunction Float?
+
+  heartSex              Int?
+  chestPainType         Int?
+  restingBloodPressure  Int?
+  cholesterol           Int?
+  fastingBloodSugar     Boolean?
+  restingEcg            Int?
+  maxHeartRate          Int?
+  exerciseInducedAngina Boolean?
+  oldpeak               Float?
+  stSlope               Int?
+  majorVessels          Int?
+  thal                  Int?
+
+  systolicBp                Int?
+  diastolicBp               Int?
+  heartRate                 Int?
+  bpHistory                 BP_History?
+  medication                Medication?
+  familyHistoryHypertension Boolean?
+  exerciseLevel             Exercise_Level?
+  smokingStatus             Smoking_Status?
+
+  temperatureC     Float?
+  oxygenSaturation Float?
+  hemoglobin       Float?
+
+  symptoms String[]
+  notes    String?
+
+  inputSource AssessmentInputSource @default(MANUAL)
+
+  documents   PatientDocument[]
+  predictions Prediction[]
+  referrals   Referral[]
+
+  followUpId String?
+  followUp   FollowUp? @relation(fields: [followUpId], references: [id])
+
+  deviceId        String?
+  clientCreatedAt DateTime
+  syncedAt        DateTime?
+  completedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([conductedById])
+  @@index([followUpId])
+  @@map("assessments")
+}
+
+model ClinicalNote {
+  id String @id @default(uuid())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  doctorId String
+  doctor   DoctorProfile @relation(fields: [doctorId], references: [id])
+
+  appointmentId String?      @unique
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  content            String?
+  observations       String?
+  clinicalImpression String?
+  diagnosis          String?
+  treatmentPlan      String?
+  advice             String?
+
+  followUpRequired  Boolean @default(false)
+  followUpAfterDays Int?
+
+  status      ClinicalNoteStatus @default(DRAFT)
+  finalizedAt DateTime?
+
+  medications ClinicalMedication[]
+  followUps   FollowUp[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@map("clinical_notes")
+}
+
+model ClinicalMedication {
+  id String @id @default(uuid())
+
+  clinicalNoteId String
+  clinicalNote   ClinicalNote @relation(fields: [clinicalNoteId], references: [id], onDelete: Cascade)
+
+  name         String
+  dosage       String
+  frequency    String
+  duration     String
+  route        String
+  instructions String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clinicalNoteId])
+  @@map("clinical_medications")
+}
+
+model PatientDocument {
+  id String @id @default(uuid())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  assessmentId String?
+  assessment   Assessment? @relation(fields: [assessmentId], references: [id])
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  fileName   String
+  fileType   String
+  fileSize   Int
+  storageKey String
+
+  ocrStatus OcrStatus @default(NOT_APPLICABLE)
+
+  extraction DocumentExtraction?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([assessmentId])
+  @@map("patient_documents")
+}
+
+model DocumentExtraction {
+  id String @id @default(uuid())
+
+  documentId String          @unique
+  document   PatientDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  extractedText String?
+  extractedData Json?
+  confidence    Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("document_extractions")
+}
+
+model ModelVersion {
+  id             String  @id @default(uuid())
+  modelName      String
+  disease        Disease
+  version        String
+  framework      String?
+  modelHash      String?
+  featureVersion String?
+  isActive       Boolean @default(false)
+
+  predictions Prediction[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([disease, version])
+  @@map("model_versions")
+}
+
+model Prediction {
+  id String @id @default(uuid())
+
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+
+  modelVersionId String
+  modelVersion   ModelVersion @relation(fields: [modelVersionId], references: [id])
+
+  disease     Disease
+  prediction  Boolean
+  probability Float
+  riskLevel   RiskLevel
+  triage      String
+  deviceId    String?
+
+  reasons   PredictionReason[]
+  referrals Referral[]
+
+  generatedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([assessmentId, disease])
+  @@map("predictions")
+}
+
+model PredictionReason {
+  id String @id @default(uuid())
+
+  predictionId String
+  prediction   Prediction @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+
+  reason  String
+  feature String?
+  value   Json?
+  message String?
+
+  @@index([predictionId])
+  @@map("prediction_reasons")
+}
+
+model Referral {
+  id String @id @default(uuid())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  assessmentId String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id])
+
+  predictionId String?
+  prediction   Prediction? @relation(fields: [predictionId], references: [id])
+
+  createdById String
+  createdBy   User   @relation(fields: [createdById], references: [id])
+
+  recommendedPhcId String
+  recommendedPhc   PrimaryHealthCentre @relation("ReferralRecommendedPhc", fields: [recommendedPhcId], references: [id])
+
+  assignedPhcId String?
+  assignedPhc   PrimaryHealthCentre? @relation("ReferralAssignedPhc", fields: [assignedPhcId], references: [id])
+
+  recommendedSpecialization String?
+
+  priority ReferralPriority @default(MEDIUM)
+  reason   String
+  status   ReferralStatus   @default(PENDING)
+
+  referredAt  DateTime  @default(now())
+  acceptedAt  DateTime?
+  completedAt DateTime?
+
+  notes String?
+
+  doctorAssignments DoctorAssignment[]
+  appointments      Appointment[]
+  history           ReferralHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([assessmentId, predictionId])
+  @@index([patientId])
+  @@index([status])
+  @@map("referrals")
+}
+
+model ReferralHistory {
+  id String @id @default(uuid())
+
+  referralId String
+  referral   Referral @relation(fields: [referralId], references: [id], onDelete: Cascade)
+
+  status ReferralStatus
+
+  changedById String
+  changedBy   User   @relation(fields: [changedById], references: [id])
+
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@index([referralId, createdAt])
+  @@map("referral_history")
+}
+
+model DoctorAssignment {
+  id String @id @default(uuid())
+
+  referralId String
+  referral   Referral @relation(fields: [referralId], references: [id])
+
+  doctorId String
+  doctor   DoctorProfile @relation(fields: [doctorId], references: [id])
+
+  assignedById String
+  assignedBy   User   @relation(fields: [assignedById], references: [id])
+
+  status AssignmentStatus @default(PENDING)
+
+  assignedAt DateTime @default(now())
+  notes      String?
+
+  @@index([referralId])
+  @@index([doctorId])
+  @@map("doctor_assignments")
+}
+
+model Appointment {
+  id String @id @default(uuid())
+
+  referralId String?
+  referral   Referral? @relation(fields: [referralId], references: [id])
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  phcId String
+  phc   PrimaryHealthCentre @relation(fields: [phcId], references: [id])
+
+  doctorId String
+  doctor   DoctorProfile @relation(fields: [doctorId], references: [id])
+
+  scheduledAt     DateTime
+  durationMinutes Int               @default(30)
+  status          AppointmentStatus @default(SCHEDULED)
+
+  reason String?
+  notes  String?
+
+  clinicalNotes ClinicalNote[]
+  followUps     FollowUp[]
+  history       AppointmentHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([status])
+  @@map("appointments")
+}
+
+model AppointmentHistory {
+  id String @id @default(uuid())
+
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  status AppointmentStatus
+
+  changedById String
+  changedBy   User   @relation(fields: [changedById], references: [id])
+
+  reason      String?
+  scheduledAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([appointmentId, createdAt])
+  @@map("appointment_history")
+}
+
+model FollowUp {
+  id String @id @default(uuid())
+
+  patientId String
+  patient   Patient @relation(fields: [patientId], references: [id])
+
+  doctorId String
+  doctor   DoctorProfile @relation(fields: [doctorId], references: [id])
+
+  appointmentId String?
+  appointment   Appointment? @relation(fields: [appointmentId], references: [id])
+
+  clinicalNoteId String?
+  clinicalNote   ClinicalNote? @relation(fields: [clinicalNoteId], references: [id])
+
+  assignedToId String
+  assignedTo   AshaWorkerProfile @relation(fields: [assignedToId], references: [id])
+
+  scheduledDate DateTime
+  completedDate DateTime?
+
+  reason   String?
+  priority ReferralPriority @default(MEDIUM)
+  status   FollowUpStatus   @default(PENDING)
+  visited  Boolean?
+  notes    String?
+
+  assessments Assessment[]
+  history     FollowUpHistory[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId])
+  @@index([assignedToId])
+  @@index([doctorId])
+  @@index([clinicalNoteId])
+  @@index([status])
+  @@map("follow_ups")
+}
+
+model FollowUpHistory {
+  id String @id @default(uuid())
+
+  followUpId String
+  followUp   FollowUp @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+
+  status FollowUpStatus
+
+  changedById String
+  changedBy   User   @relation(fields: [changedById], references: [id])
+
+  reason      String?
+  scheduledAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([followUpId, createdAt])
+  @@map("follow_up_history")
+}
+
+model Notification {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type    NotificationType
+  title   String
+  message String
+
+  referenceType String?
+  referenceId   String?
+
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model SyncOperation {
+  id String @id @default(uuid())
+
+  operationId String @unique
+  deviceId    String
+
+  entityType String
+  entityId   String
+  operation  SyncOperationType
+
+  status SyncStatus @default(PENDING)
+
+  payload      Json?
+  errorCode    String?
+  errorMessage String?
+
+  processedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([deviceId])
+  @@index([entityType, entityId])
+  @@map("sync_operations")
+}
+
+model AuditLog {
+  id     String  @id @default(uuid())
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action String
+
+  entityType String?
+  entityId   String?
+
+  oldData Json?
+  newData Json?
+
+  deviceId  String?
+  ipAddress String?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
 }

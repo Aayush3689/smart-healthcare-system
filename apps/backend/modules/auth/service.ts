@@ -85,6 +85,28 @@ export class AuthService {
   }
   public async provision(actorId: string, input: ProvisionAccountInput) {
     try {
+      const admin = await this.repository.adminPhc(actorId);
+      if (!admin) throw new AppError("PHC administrator profile not found.", 403, "FORBIDDEN");
+
+      if (input.role === Role.ASHA_WORKER) {
+        const village = await this.repository.village(input.villageId);
+        if (!village || village.phcId !== admin.phcId || !village.isActive) {
+          throw new AppError(
+            "Village was not found in your PHC or is inactive.",
+            404,
+            "VILLAGE_NOT_FOUND",
+          );
+        }
+      }
+
+      if (input.role === Role.DOCTOR && input.phcId !== admin.phcId) {
+        throw new AppError(
+          "Doctors can only be provisioned in your PHC.",
+          403,
+          "PHC_SCOPE_VIOLATION",
+        );
+      }
+
       return this.publicUser(await this.repository.provision({ ...input, invitedById: actorId }));
     } catch (error) {
       if (error instanceof AppError) throw error;

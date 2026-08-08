@@ -42,6 +42,10 @@ export const env = Object.freeze({
   port,
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
+  ai: {
+    baseUrl: process.env.AI_SERVICE_URL ?? "http://localhost:8000",
+    timeoutMs: Number(process.env.AI_SERVICE_TIMEOUT_MS ?? 15000),
+  },
   smtp: {
     host: required("SMTP_HOST"),
     port: Number(process.env.SMTP_PORT ?? 587),

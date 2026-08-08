@@ -42,6 +42,67 @@ test("provision-account endpoint validation requires role-specific fields", () =
   );
 });
 
+test("ASHA provisioning rejects a missing or cross-PHC village before transaction", async () => {
+  let provisioned = false;
+  const service = new AuthService(
+    {
+      adminPhc: async () => ({ phcId: "phc-1" }),
+      village: async () => null,
+      provision: async () => {
+        provisioned = true;
+      },
+    } as never,
+    {} as never,
+    {} as never,
+  );
+  await assert.rejects(
+    () =>
+      service.provision("admin-user", {
+        email: "asha@example.com",
+        role: Role.ASHA_WORKER,
+        fullName: "Asha Devi",
+        villageId: "11111111-1111-4111-8111-111111111111",
+        employeeCode: "ASHA-001",
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "VILLAGE_NOT_FOUND",
+  );
+  assert.equal(provisioned, false);
+});
+
+test("ASHA provisioning accepts an active village in the admin PHC", async () => {
+  let provisionedVillage = "";
+  const service = new AuthService(
+    {
+      adminPhc: async () => ({ phcId: "phc-1" }),
+      village: async () => ({ id: "village-1", phcId: "phc-1", isActive: true }),
+      provision: async (data: { villageId?: string }) => {
+        provisionedVillage = data.villageId ?? "";
+        return {
+          id: "asha-user",
+          email: "asha@example.com",
+          role: Role.ASHA_WORKER,
+          status: UserStatus.INVITED,
+          isEmailVerified: false,
+        };
+      },
+    } as never,
+    {} as never,
+    {} as never,
+  );
+  const result = await service.provision("admin-user", {
+    email: "asha@example.com",
+    role: Role.ASHA_WORKER,
+    fullName: "Asha Devi",
+    villageId: "11111111-1111-4111-8111-111111111111",
+    employeeCode: "ASHA-001",
+  });
+  assert.equal(provisionedVillage, "11111111-1111-4111-8111-111111111111");
+  assert.equal(result.role, Role.ASHA_WORKER);
+});
+
 test("request-otp endpoint flow sends a six-digit code", async () => {
   let sentOtp = "";
   let otpHash = "";
