@@ -14,7 +14,11 @@ Every endpoint uses the same envelope:
 Errors use:
 
 ```json
-{ "success": false, "message": "...", "error": { "code": "ERROR_CODE", "details": [] } }
+{
+  "success": false,
+  "message": "...",
+  "error": { "code": "ERROR_CODE", "details": [] }
+}
 ```
 
 `details` is included for validation errors outside production. Request bodies are strict: unknown fields return `400 VALIDATION_ERROR`.
@@ -23,9 +27,9 @@ Errors use:
 
 Sends a six-digit login code to an existing non-inactive account.
 
-| Field | Required | Rules |
-| --- | --- | --- |
-| `email` | Yes | Valid email, maximum 320 characters. Whitespace is trimmed and the value lowercased. |
+| Field   | Required | Rules                                                                                |
+| ------- | -------- | ------------------------------------------------------------------------------------ |
+| `email` | Yes      | Valid email, maximum 320 characters. Whitespace is trimmed and the value lowercased. |
 
 ```json
 { "email": "doctor@example.com" }
@@ -39,15 +43,19 @@ Errors: `400 VALIDATION_ERROR`; `404 ACCOUNT_NOT_FOUND` when no active account e
 
 Verifies a login code, activates the account, and returns an access/refresh token pair.
 
-| Field | Required | Rules |
-| --- | --- | --- |
-| `email` | Yes | Valid email; normalized as above. |
-| `otp` | Yes | String containing exactly six digits. |
-| `platform` | No | `MOBILE_APP` (default), `DOCTOR_DASHBOARD`, or `ADMIN_DASHBOARD`. |
-| `deviceId` | No | Trimmed string, maximum 200 characters. |
+| Field      | Required | Rules                                                             |
+| ---------- | -------- | ----------------------------------------------------------------- |
+| `email`    | Yes      | Valid email; normalized as above.                                 |
+| `otp`      | Yes      | String containing exactly six digits.                             |
+| `platform` | No       | `MOBILE_APP` (default), `DOCTOR_DASHBOARD`, or `ADMIN_DASHBOARD`. |
+| `deviceId` | No       | Trimmed string, maximum 200 characters.                           |
 
 ```json
-{ "email": "doctor@example.com", "otp": "123456", "platform": "DOCTOR_DASHBOARD" }
+{
+  "email": "doctor@example.com",
+  "otp": "123456",
+  "platform": "DOCTOR_DASHBOARD"
+}
 ```
 
 Success: `200`; `data` contains `user`, `accessToken`, and `refreshToken`. Access tokens last 15 minutes; refresh tokens last 30 days.
@@ -80,7 +88,13 @@ Returns the authenticated user. Send `Authorization: Bearer <accessToken>`. No r
 Success: `200` with:
 
 ```json
-{ "id": "uuid", "email": "doctor@example.com", "role": "DOCTOR", "status": "ACTIVE", "isEmailVerified": true }
+{
+  "id": "uuid",
+  "email": "doctor@example.com",
+  "role": "DOCTOR",
+  "status": "ACTIVE",
+  "isEmailVerified": true
+}
 ```
 
 Errors: `401 UNAUTHENTICATED` without a bearer token; `401 INVALID_ACCESS_TOKEN` for a bad or expired token; `404 ACCOUNT_NOT_FOUND` if the account was removed.
@@ -106,16 +120,29 @@ Creates an invited Doctor or ASHA Worker account. A `PHC_ADMIN` access token is 
 Doctor body:
 
 ```json
-{ "email": "doctor@example.com", "role": "DOCTOR", "fullName": "Dr. Ada Rao", "phcId": "uuid" }
+{
+  "email": "doctor@example.com",
+  "role": "DOCTOR",
+  "fullName": "Dr. Ada Rao",
+  "phcId": "uuid"
+}
 ```
 
 ASHA Worker body:
 
 ```json
-{ "email": "asha@example.com", "role": "ASHA_WORKER", "fullName": "Asha Devi", "villageId": "uuid", "employeeCode": "ASHA-01" }
+{
+  "email": "asha@example.com",
+  "role": "ASHA_WORKER",
+  "fullName": "Asha Devi",
+  "villageId": "uuid",
+  "employeeCode": "ASHA-01"
+}
 ```
 
 All bodies require `email`, `role`, and `fullName` (2–150 characters). Doctors require UUID `phcId`; ASHA workers require UUID `villageId` and `employeeCode` (2–100 characters). `PHC_ADMIN` is not accepted.
+
+The ASHA `villageId` must identify an active village belonging to the authenticated admin's PHC. Fetch valid IDs with `GET /api/v1/phc/me/villages`; arbitrary UUIDs return `404 VILLAGE_NOT_FOUND`. Doctors may likewise only be provisioned into the authenticated admin's PHC.
 
 Success: `201` with the new invited user in `data`.
 
