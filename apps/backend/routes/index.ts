@@ -44,12 +44,14 @@ import {
   phcFollowUpRoutes,
 } from "../modules/follow-ups/index.js";
 import { phcRoutes } from "../modules/phcs/index.js";
+import { ashaVillageRoutes, phcVillageRoutes, villageRoutes } from "../modules/villages/index.js";
 
 const ashaApiRoutes = Router();
 ashaApiRoutes.use("/", ashaRoutes);
 ashaApiRoutes.use("/me/follow-ups", ashaFollowUpRoutes);
 ashaApiRoutes.use("/me/patients", ashaPatientFollowUpRoutes);
 ashaApiRoutes.use("/me/patients", ashaClinicalSummaryRoutes);
+ashaApiRoutes.use("/me/village", ashaVillageRoutes);
 
 const doctorApiRoutes = Router();
 doctorApiRoutes.use("/", doctorRoutes);
@@ -73,6 +75,7 @@ phcApiRoutes.use("/me/referrals", phcReferralRoutes);
 phcApiRoutes.use("/me/appointments", phcAppointmentRoutes);
 phcApiRoutes.use("/me/doctors", phcDoctorRoutes);
 phcApiRoutes.use("/me/follow-ups", phcFollowUpRoutes);
+phcApiRoutes.use("/me/villages", phcVillageRoutes);
 
 const patientApiRoutes = Router();
 patientApiRoutes.use("/", patientClinicalNoteRoutes);
@@ -106,6 +109,7 @@ export class ApiRoutes {
     this.router.use("/clinical-notes", clinicalNoteRoutes);
     this.router.use("/patients", patientApiRoutes);
     this.router.use("/follow-ups", followUpRoutes);
+    this.router.use("/villages", villageRoutes);
     this.router.use(
       "/sync",
       new SyncRoutes(syncController, authMiddleware, activeAccountMiddleware).router,

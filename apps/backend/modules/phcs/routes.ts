@@ -6,7 +6,6 @@ import {
   emptyPhcQueryValidation,
   statisticsQueryValidation,
   updatePhcValidation,
-  villageIdParamValidation,
 } from "./validation.js";
 
 export const phcRoutes = Router();
@@ -25,16 +24,6 @@ phcRoutes.get(
   "/me/villages/statistics",
   validationMiddleware.validateQuery(emptyPhcQueryValidation),
   asyncHandler(phcController.villageStatistics),
-);
-phcRoutes.get(
-  "/me/villages",
-  validationMiddleware.validateQuery(emptyPhcQueryValidation),
-  asyncHandler(phcController.villages),
-);
-phcRoutes.get(
-  "/me/villages/:villageId",
-  validationMiddleware.validateParams(villageIdParamValidation),
-  asyncHandler(phcController.village),
 );
 phcRoutes.get(
   "/me/overview",

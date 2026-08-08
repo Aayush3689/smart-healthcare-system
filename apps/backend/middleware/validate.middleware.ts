@@ -38,7 +38,12 @@ export class ValidationMiddleware {
             })),
           ),
         );
-      request.query = result.data as Request["query"];
+      Object.defineProperty(request, "query", {
+        value: result.data as Request["query"],
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
       next();
     };
   }

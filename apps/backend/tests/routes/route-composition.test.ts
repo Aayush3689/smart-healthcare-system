@@ -18,6 +18,7 @@ test("API index mounts every completed top-level resource exactly once", async (
     "clinical-notes",
     "patients",
     "follow-ups",
+    "villages",
     "sync",
   ];
 
@@ -38,4 +39,6 @@ test("nested role routes are composed below their resource router", async () => 
   assert.match(source, /phcApiRoutes\.use\("\/me\/referrals"/);
   assert.match(source, /phcApiRoutes\.use\("\/me\/appointments"/);
   assert.match(source, /phcApiRoutes\.use\("\/me\/follow-ups"/);
+  assert.match(source, /phcApiRoutes\.use\("\/me\/villages"/);
+  assert.match(source, /ashaApiRoutes\.use\("\/me\/village"/);
 });

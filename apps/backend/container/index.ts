@@ -22,6 +22,9 @@ import { FollowUpService } from "../modules/follow-ups/service.js";
 import { PhcController } from "../modules/phcs/controller.js";
 import { PhcRepository } from "../modules/phcs/repository.js";
 import { PhcService } from "../modules/phcs/service.js";
+import { VillageController } from "../modules/villages/controller.js";
+import { VillageRepository } from "../modules/villages/repository.js";
+import { VillageService } from "../modules/villages/service.js";
 import { AssessmentRepository } from "../modules/assessments/repository.js";
 import { AssessmentService } from "../modules/assessments/service.js";
 import { AssessmentController } from "../modules/assessments/controller.js";
@@ -79,6 +82,8 @@ export const followUpService = new FollowUpService(new FollowUpRepository(prisma
 export const followUpController = new FollowUpController(followUpService);
 export const phcService = new PhcService(new PhcRepository(prisma), accessPolicy);
 export const phcController = new PhcController(phcService);
+export const villageService = new VillageService(new VillageRepository(prisma), accessPolicy);
+export const villageController = new VillageController(villageService);
 export const ashaService = new AshaService(
   new AshaRepository(prisma),
   accessPolicy,

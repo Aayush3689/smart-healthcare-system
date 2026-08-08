@@ -266,6 +266,7 @@ model Village {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([phcId, name])
   @@index([phcId])
   @@index([phcId, isActive])
   @@map("villages")
