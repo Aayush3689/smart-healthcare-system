@@ -1,4 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createUuid, offlineStorage } from '@/lib/offline-storage';
+import { ashaApi } from '@/lib/asha-api';
+import { auth } from '@/lib/auth';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -63,7 +65,7 @@ export default function AddPatientScreen() {
 
       // Get existing patients
       const existingData =
-        await AsyncStorage.getItem('patients');
+        await offlineStorage.getItem('patients');
 
       const existingPatients = existingData
         ? JSON.parse(existingData)
@@ -71,7 +73,7 @@ export default function AddPatientScreen() {
 
       // Create new patient
       const newPatient = {
-        id: Date.now(),
+        id: createUuid(),
 
         name: name.trim(),
 
@@ -85,9 +87,6 @@ export default function AddPatientScreen() {
 
         symptoms: symptoms.trim(),
 
-        risk: 'Low',
-
-        lastAssessment: 'Not assessed',
       };
 
       // Add new patient
@@ -97,10 +96,33 @@ export default function AddPatientScreen() {
       ];
 
       // Save patients
-      await AsyncStorage.setItem(
+      await offlineStorage.setItem(
         'patients',
         JSON.stringify(updatedPatients)
       );
+
+      // Keep the local record immediately available, then create the same
+      // client-generated UUID on the ASHA API when a signed-in connection is available.
+      void (async () => {
+        try {
+          const profile = await auth.getAshaProfile();
+          const dateOfBirth = new Date();
+          dateOfBirth.setFullYear(dateOfBirth.getFullYear() - Number(age));
+          await ashaApi.createPatient({
+            id: newPatient.id,
+            fullName: newPatient.name,
+            dateOfBirth: dateOfBirth.toISOString(),
+            gender: gender.toUpperCase(),
+            phone: newPatient.phone,
+            address: newPatient.village || undefined,
+            villageId: profile.data.village.id,
+            deviceId: 'mobile-app',
+            clientCreatedAt: new Date().toISOString(),
+          });
+        } catch (syncError) {
+          console.log('Patient saved locally; API sync will be retried later:', syncError);
+        }
+      })();
 
       Alert.alert(
         'Patient Added Successfully',

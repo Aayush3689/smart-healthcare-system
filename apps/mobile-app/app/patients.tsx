@@ -7,9 +7,12 @@ import {
   TouchableOpacity,
   FlatList,
   ActivityIndicator,
+  Alert,
+  Linking,
   SafeAreaView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineStorage } from '@/lib/offline-storage';
+import { ashaApi } from '@/lib/asha-api';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -17,6 +20,8 @@ interface Patient {
   id?: string | number;
   name?: string;
   phone?: string | number;
+  mobile?: string | number;
+  mobileNumber?: string | number;
   age?: number | string;
   gender?: string;
   medicalHistory?: string[] | string;
@@ -36,26 +41,65 @@ export default function PatientsScreen() {
     return patient?.name ? String(patient.name) : 'Unnamed Patient';
   };
 
-  // Fetch patients from AsyncStorage
-  const loadPatients = async () => {
+  // Fetch patients from local SQLite storage.
+  const loadPatients = useCallback(async () => {
     try {
       setLoading(true);
-      const storedPatients = await AsyncStorage.getItem('patients');
+      const storedPatients = await offlineStorage.getItem('patients');
       const parsed: Patient[] = storedPatients ? JSON.parse(storedPatients) : [];
+      const normalizedQuery = searchQuery.trim().toLowerCase();
 
-      setPatients(parsed);
-      filterPatients(searchQuery, parsed);
+      // Use the ASHA-scoped server list when available, while retaining local
+      // records so the directory remains usable before queued changes sync.
+      let serverPatients: Patient[] = [];
+      try {
+        const response = await ashaApi.patients({
+          page: 1,
+          limit: 100,
+          search: normalizedQuery || undefined,
+        });
+        const records = response.patients;
+        if (Array.isArray(records)) {
+          serverPatients = records.map((record) => {
+            const item = record as Record<string, unknown>;
+            return {
+              id: item.id as string | number | undefined,
+              name: item.fullName as string | undefined,
+              age: item.age as number | string | undefined,
+              gender: item.gender as string | undefined,
+              phone: item.phone as string | number | undefined,
+              village: item.village,
+              latestRisk: item.latestRisk,
+              lastAssessmentAt: item.lastAssessmentAt,
+            };
+          });
+        }
+      } catch (apiError) {
+        console.log('Unable to load patients from the ASHA API; using local records:', apiError);
+      }
+
+      const mergedPatients = new Map<string, Patient>();
+      parsed.forEach((patient) => mergedPatients.set(String(patient.id ?? ''), patient));
+      serverPatients.forEach((patient) => mergedPatients.set(String(patient.id ?? ''), patient));
+      const allPatients = Array.from(mergedPatients.values());
+
+      setPatients(allPatients);
+      setFilteredPatients(
+        normalizedQuery
+          ? allPatients.filter((patient) => getPatientName(patient).toLowerCase().includes(normalizedQuery))
+          : allPatients
+      );
     } catch (error) {
       console.error('Failed to load patients:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery]);
 
   useFocusEffect(
     useCallback(() => {
-      loadPatients();
-    }, [])
+      void loadPatients();
+    }, [loadPatients])
   );
 
   // Simplified Search Filter - Strictly by Name
@@ -81,10 +125,32 @@ export default function PatientsScreen() {
     setFilteredPatients(patients);
   };
 
+  const handleCallPatient = async (phoneNumber: string) => {
+    const dialableNumber = phoneNumber.replace(/[^\d+]/g, '');
+    const dialUrl = `tel:${dialableNumber}`;
+
+    try {
+      const canCall = await Linking.canOpenURL(dialUrl);
+      if (!canCall) {
+        Alert.alert('Calling unavailable', 'This device cannot place phone calls.');
+        return;
+      }
+
+      await Linking.openURL(dialUrl);
+    } catch {
+      Alert.alert('Unable to call', 'Please try calling the patient again.');
+    }
+  };
+
   const renderPatientCard = ({ item }: { item: Patient }) => {
     const patientId = String(item?.id ?? item?.patientId ?? item?._id ?? '');
     const patientName = getPatientName(item);
-    const patientPhone = item?.phone ? String(item.phone) : '';
+    const patientPhone = item?.phone ?? item?.mobile ?? item?.mobileNumber;
+    const patientPhoneText = patientPhone ? String(patientPhone) : '';
+    const patientMeta = [
+      item.age ? `${item.age} yrs` : '',
+      item.gender ?? '',
+    ].filter(Boolean).join(' • ');
 
     return (
       <TouchableOpacity
@@ -103,17 +169,27 @@ export default function PatientsScreen() {
         </View>
 
         <View style={styles.patientInfo}>
-          <View style={styles.patientHeader}>
-            <Text style={styles.patientName}>{patientName}</Text>
-            {patientId ? <Text style={styles.patientId}>ID: #{patientId}</Text> : null}
-          </View>
+          <Text style={styles.patientName} numberOfLines={1}>{patientName}</Text>
+          {patientId ? <Text style={styles.patientId}>Patient ID: #{patientId}</Text> : null}
 
           <View style={styles.patientSubInfo}>
-            {item.age ? <Text style={styles.metaText}>{item.age} yrs</Text> : null}
-            {item.gender ? <Text style={styles.metaText}> • {item.gender}</Text> : null}
-            {patientPhone ? <Text style={styles.metaText}> • 📞 {patientPhone}</Text> : null}
+            {patientMeta ? <Text style={styles.metaText}>{patientMeta}</Text> : null}
           </View>
         </View>
+
+        {patientPhoneText ? (
+          <TouchableOpacity
+            style={styles.callButton}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`Call ${patientName}`}
+            onPress={(event) => {
+              event.stopPropagation();
+              void handleCallPatient(patientPhoneText);
+            }}>
+            <Ionicons name="call" size={19} color="#FFFFFF" />
+          </TouchableOpacity>
+        ) : null}
 
         <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
       </TouchableOpacity>
@@ -277,9 +353,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    borderRadius: 16,
+    minHeight: 96,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#000',
@@ -289,45 +366,49 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   avatarContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: '#E0F2FE',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   avatarText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#0284C7',
   },
   patientInfo: {
     flex: 1,
   },
-  patientHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginRight: 8,
-  },
   patientName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#0F172A',
   },
   patientId: {
     fontSize: 12,
     fontWeight: '500',
     color: '#64748B',
+    marginTop: 3,
+  },
+  callButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#0B8F87',
+    marginLeft: 8,
+    marginRight: 8,
   },
   patientSubInfo: {
-    flexDirection: 'row',
     marginTop: 4,
     alignItems: 'center',
   },
   metaText: {
-    fontSize: 13,
+    fontSize: 14,
     color: '#64748B',
   },
   emptyContainer: {

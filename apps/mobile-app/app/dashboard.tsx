@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineStorage } from '@/lib/offline-storage';
 import { router, useFocusEffect } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import {
@@ -23,7 +23,6 @@ type Patient = {
   mobile?: string;
   mobileNumber?: string;
 
-  lastAssessment?: string;
   risk?: string;
   riskLevel?: string;
 };
@@ -242,8 +241,8 @@ export default function DashboardScreen() {
         storedPatients,
         storedAssessments,
       ] = await Promise.all([
-        AsyncStorage.getItem('patients'),
-        AsyncStorage.getItem(
+        offlineStorage.getItem('patients'),
+        offlineStorage.getItem(
           'healthAssessments'
         ),
       ]);
@@ -475,18 +474,12 @@ export default function DashboardScreen() {
           </View>
 
           <TouchableOpacity
-            style={
-              styles.notificationButton
-            }
+            style={styles.notificationButton}
             activeOpacity={0.7}
+            onPress={() => router.push('/asha-profile')}
+            accessibilityLabel="Open my ASHA worker profile"
           >
-            <Text
-              style={
-                styles.notificationIcon
-              }
-            >
-              🔔
-            </Text>
+            <Text style={styles.notificationIcon}>👤</Text>
           </TouchableOpacity>
         </View>
 
@@ -586,7 +579,7 @@ export default function DashboardScreen() {
             style={styles.actionCard}
             activeOpacity={0.8}
             onPress={() =>
-              router.push('/patients')
+              router.push('/assessment')
             }
           >
             <View

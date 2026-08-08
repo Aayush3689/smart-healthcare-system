@@ -9,7 +9,7 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineStorage } from '@/lib/offline-storage';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -49,7 +49,11 @@ interface Assessment {
 
 export default function AssessmentDetailsScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { assessmentId, id } = useLocalSearchParams<{
+    assessmentId?: string;
+    id?: string;
+  }>();
+  const resolvedAssessmentId = assessmentId ?? id ?? '';
 
   const [loading, setLoading] = useState(true);
   const [assessment, setAssessment] = useState<Assessment | null>(null);
@@ -97,18 +101,18 @@ export default function AssessmentDetailsScreen() {
     return { sys, dia, combined };
   };
 
-  const loadDetails = async () => {
+  const loadDetails = useCallback(async () => {
     try {
       setLoading(true);
       const [storedPatients, storedAssessments] = await Promise.all([
-        AsyncStorage.getItem('patients'),
-        AsyncStorage.getItem('healthAssessments'),
+        offlineStorage.getItem('patients'),
+        offlineStorage.getItem('healthAssessments'),
       ]);
 
       const parsedPatients: Patient[] = storedPatients ? JSON.parse(storedPatients) : [];
       const parsedAssessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
 
-      const targetAssessmentId = String(id).trim();
+      const targetAssessmentId = String(resolvedAssessmentId).trim();
 
       const foundAssessment = parsedAssessments.find((a) => {
         const aId = String(a.id ?? '').trim();
@@ -132,12 +136,12 @@ export default function AssessmentDetailsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [resolvedAssessmentId]);
 
   useFocusEffect(
     useCallback(() => {
-      loadDetails();
-    }, [id])
+      void loadDetails();
+    }, [loadDetails])
   );
 
   const handleEditAssessment = () => {
@@ -147,7 +151,7 @@ export default function AssessmentDetailsScreen() {
     router.push({
       pathname: '/health-assessment',
       params: {
-        assessmentId: String(id),
+        assessmentId: String(resolvedAssessmentId),
         patientId,
       },
     });
@@ -164,15 +168,15 @@ export default function AssessmentDetailsScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const storedAssessments = await AsyncStorage.getItem('healthAssessments');
+              const storedAssessments = await offlineStorage.getItem('healthAssessments');
               const parsedAssessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
 
-              const targetIdStr = String(id).trim();
+              const targetIdStr = String(resolvedAssessmentId).trim();
               const updatedAssessments = parsedAssessments.filter(
                 (a) => String(a.id).trim() !== targetIdStr
               );
 
-              await AsyncStorage.setItem('healthAssessments', JSON.stringify(updatedAssessments));
+              await offlineStorage.setItem('healthAssessments', JSON.stringify(updatedAssessments));
 
               Alert.alert('Deleted', 'The assessment record has been removed.', [
                 {

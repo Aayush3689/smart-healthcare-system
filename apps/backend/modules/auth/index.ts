@@ -1,1 +1,1 @@
-// Public module exports.
+export { AuthRoutes } from "./routes.js";

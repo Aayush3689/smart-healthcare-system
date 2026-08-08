@@ -1,472 +1,80 @@
-import React, { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  SafeAreaView,
-  Alert,
-  ActivityIndicator,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from 'expo-audio';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AssessmentModelInputs, modelInputFields } from '@/lib/ai-predictions';
+import { ashaApi } from '@/lib/asha-api';
+import { createUuid, offlineStorage } from '@/lib/offline-storage';
 
-interface Assessment {
-  id?: string | number;
-  patientId?: string | number;
-  patient_id?: string | number;
-  date?: string;
-  riskLevel?: string;
-  symptoms?: string[] | string;
-  additionalDetails?: string;
-  medicalHistory?: string[] | string;
-  medications?: string[] | string;
-  vitals?: Record<string, any>;
-  [key: string]: any;
-}
+const quickSymptoms = ['Fever', 'Cough', 'Dizziness', 'Fatigue', 'Shortness of Breath', 'Nausea / Vomiting'];
+const historyOptions = ['Diabetes', 'Hypertension', 'Heart Disease', 'Asthma', 'Kidney Disease', 'Allergies'];
+type Assessment = Record<string, any>;
+type Patient = { id: string | number; name?: string; age?: string | number; gender?: string };
+const toList = (value: unknown) => Array.isArray(value) ? value.map(String).filter(Boolean) : typeof value === 'string' ? value.split(',').map((item) => item.trim()).filter(Boolean) : [];
+const numberOrUndefined = (value: string) => { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : undefined; };
 
 export default function HealthAssessmentScreen() {
   const router = useRouter();
-  const { patientId, assessmentId } = useLocalSearchParams<{
-    patientId: string;
-    assessmentId: string;
-  }>();
+  const { patientId, assessmentId } = useLocalSearchParams<{ patientId: string; assessmentId: string }>();
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const recorderState = useAudioRecorderState(recorder);
+  const [loading, setLoading] = useState(true); const [submitting, setSubmitting] = useState(false); const speechLoading = false;
+  const [name, setName] = useState(''); const [age, setAge] = useState(''); const [gender, setGender] = useState(''); const [height, setHeight] = useState(''); const [weight, setWeight] = useState('');
+  const [temperature, setTemperature] = useState(''); const [systolicBP, setSystolicBP] = useState(''); const [diastolicBP, setDiastolicBP] = useState(''); const [heartRate, setHeartRate] = useState(''); const [oxygen, setOxygen] = useState('');
+  const [symptoms, setSymptoms] = useState<string[]>([]); const [additionalSymptoms, setAdditionalSymptoms] = useState(''); const [history, setHistory] = useState<string[]>([]); const [medications, setMedications] = useState(''); const [notes, setNotes] = useState('');
+  const [ocrText] = useState(''); const [transcript, setTranscript] = useState(''); const [modelInputs, setModelInputs] = useState<AssessmentModelInputs>({});
+  const isEditing = Boolean(assessmentId);
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  // Form State
-  const [oxygenSaturation, setOxygenSaturation] = useState('');
-  const [heartRate, setHeartRate] = useState('');
-  const [sysBP, setSysBP] = useState('');
-  const [diaBP, setDiaBP] = useState('');
-  const [symptoms, setSymptoms] = useState('');
-  const [medicalHistory, setMedicalHistory] = useState('');
-  const [medications, setMedications] = useState('');
-  const [additionalDetails, setAdditionalDetails] = useState('');
-
-  const isEditing = !!assessmentId;
-
-  useEffect(() => {
-    loadAssessmentData();
+  const load = useCallback(async () => {
+    try {
+      const [patientRaw, assessmentRaw] = await Promise.all([offlineStorage.getItem('patients'), offlineStorage.getItem('healthAssessments')]);
+      const patients: Patient[] = patientRaw ? JSON.parse(patientRaw) : [];
+      const stored: Assessment[] = assessmentRaw ? JSON.parse(assessmentRaw) : [];
+      const existing = stored.find((item) => String(item.id) === String(assessmentId));
+      const patient = patients.find((item) => String(item.id) === String(patientId ?? existing?.patientId));
+      if (patient) { setName(patient.name || ''); setAge(patient.age === undefined ? '' : String(patient.age)); setGender(patient.gender || ''); }
+      if (existing) {
+        const vitals = existing.vitals || {};
+        setName(existing.patientName || patient?.name || ''); setAge(existing.patientAge === undefined ? (patient?.age === undefined ? '' : String(patient.age)) : String(existing.patientAge)); setGender(existing.patientGender || patient?.gender || '');
+        setHeight(String(existing.height ?? '')); setWeight(String(existing.weight ?? '')); setTemperature(String(vitals.temperature ?? existing.temperature ?? '')); setSystolicBP(String(vitals.systolicBP ?? existing.sysBP ?? '')); setDiastolicBP(String(vitals.diastolicBP ?? existing.diaBP ?? '')); setHeartRate(String(vitals.heartRate ?? existing.heartRate ?? '')); setOxygen(String(vitals.oxygenSaturation ?? existing.oxygenSaturation ?? ''));
+        setSymptoms(toList(existing.symptoms).filter((item) => quickSymptoms.includes(item))); setAdditionalSymptoms(existing.additionalSymptoms || toList(existing.symptoms).filter((item) => !quickSymptoms.includes(item)).join(', ')); setHistory(toList(existing.medicalHistory)); setMedications(toList(existing.medications).join(', ')); setNotes(existing.additionalDetails || existing.notes || ''); setTranscript(existing.speechTranscript || ''); setModelInputs(existing.modelInputs || {});
+      }
+    } catch { Alert.alert('Error', 'Unable to load the assessment.'); } finally { setLoading(false); }
   }, [assessmentId, patientId]);
+  useEffect(() => { void load(); }, [load]);
+  const toggle = (value: string, setter: React.Dispatch<React.SetStateAction<string[]>>) => setter((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value]);
 
-  const formatListString = (item?: string[] | string): string => {
-    if (!item) return '';
-    if (Array.isArray(item)) return item.filter(Boolean).join(', ');
-    if (typeof item === 'string') return item.trim();
-    return String(item);
+  const choosePrescription = () => Alert.alert('OCR unavailable offline', 'This app has no bundled OCR ONNX model. OCR requires the AI service or a separate local OCR model.');
+  const startRecording = async () => {
+    try { const permission = await AudioModule.requestRecordingPermissionsAsync(); if (!permission.granted) { Alert.alert('Permission required', 'Microphone access is needed for voice input.'); return; } await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true }); await recorder.prepareToRecordAsync(); recorder.record(); }
+    catch { Alert.alert('Recording unavailable', 'Unable to start voice recording.'); }
   };
-
-  const loadAssessmentData = async () => {
+  const stopRecording = async () => {
+    try { await recorder.stop(); Alert.alert('Speech-to-text unavailable offline', 'This app has no bundled speech-recognition ONNX model.'); }
+    catch { Alert.alert('Recording unavailable', 'Unable to stop voice recording.'); }
+  };
+  const saveAssessment = async () => {
+    const numericVitals = { Temperature: numberOrUndefined(temperature), Systolic_BP: numberOrUndefined(systolicBP), Diastolic_BP: numberOrUndefined(diastolicBP), Heart_Rate: numberOrUndefined(heartRate), Oxygen: numberOrUndefined(oxygen) };
+    const payload = { patient_name: name.trim(), age: numberOrUndefined(age), gender, height: numberOrUndefined(height), weight: numberOrUndefined(weight), ...Object.fromEntries(Object.entries(numericVitals).filter(([, value]) => value !== undefined)), symptoms: [...symptoms, ...toList(additionalSymptoms)], medical_history: history, current_medications: toList(medications), additional_notes: notes.trim(), ocr_text: ocrText, speech_transcript: transcript };
     try {
-      setLoading(true);
-
-      // If opening an existing assessment, pre-fill all fields
-      if (assessmentId) {
-        const storedAssessments = await AsyncStorage.getItem('healthAssessments');
-        const parsedAssessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
-
-        const target = parsedAssessments.find(
-          (a) => String(a.id).trim() === String(assessmentId).trim()
-        );
-
-        if (target) {
-          const v = target.vitals || {};
-          const oxygen =
-            v.oxygenSaturation ?? v.oxygen ?? v.spo2 ?? target.oxygenSaturation ?? target.spo2 ?? '';
-          const hr =
-            v.heartRate ?? v.heart_rate ?? v.pulse ?? target.heartRate ?? target.pulse ?? '';
-          const sys =
-            v.sysBP ?? v.sys_bp ?? v.systolic ?? target.sysBP ?? target.systolic ?? '';
-          const dia =
-            v.diaBP ?? v.dia_bp ?? v.diastolic ?? target.diaBP ?? target.diastolic ?? '';
-
-          setOxygenSaturation(oxygen !== '' ? String(oxygen) : '');
-          setHeartRate(hr !== '' ? String(hr) : '');
-          setSysBP(sys !== '' ? String(sys) : '');
-          setDiaBP(dia !== '' ? String(dia) : '');
-          setSymptoms(formatListString(target.symptoms));
-          setMedicalHistory(formatListString(target.medicalHistory || target.medical_history));
-          setMedications(formatListString(target.medications || target.medication));
-          setAdditionalDetails(target.additionalDetails || target.additional_details || target.notes || '');
-        }
-      } else {
-        // Explicitly clear all fields for NEW Health Assessment
-        setOxygenSaturation('');
-        setHeartRate('');
-        setSysBP('');
-        setDiaBP('');
-        setSymptoms('');
-        setMedicalHistory('');
-        setMedications('');
-        setAdditionalDetails('');
-      }
-    } catch (error) {
-      console.error('Failed to load assessment data:', error);
-      Alert.alert('Error', 'Failed to load existing assessment details.');
-    } finally {
-      setLoading(false);
-    }
+      setSubmitting(true);
+      const raw = await offlineStorage.getItem('healthAssessments'); const all: Assessment[] = raw ? JSON.parse(raw) : []; const id = assessmentId || createUuid(); const record = { id, patientId: patientId || 'unknown', patientName: name.trim(), patientAge: numberOrUndefined(age), patientGender: gender, date: new Date().toISOString(), riskLevel: 'Pending', risk_level: 'Pending', height: numberOrUndefined(height), weight: numberOrUndefined(weight), symptoms: payload.symptoms, additionalSymptoms, medicalHistory: history, medications: toList(medications), additionalDetails: notes.trim(), ocrText, speechTranscript: transcript, modelInputs, vitals: { temperature: numericVitals.Temperature, systolicBP: numericVitals.Systolic_BP, diastolicBP: numericVitals.Diastolic_BP, heartRate: numericVitals.Heart_Rate, oxygenSaturation: numericVitals.Oxygen } };
+      const updated = isEditing ? all.map((item) => String(item.id) === String(id) ? { ...item, ...record } : item) : [record, ...all]; await offlineStorage.setItem('healthAssessments', JSON.stringify(updated));
+      if (!isEditing && patientId) void ashaApi.createAssessment({ id: String(id), patientId, oxygenSaturation: numericVitals.Oxygen, heartRate: numericVitals.Heart_Rate, systolicBp: numericVitals.Systolic_BP, diastolicBp: numericVitals.Diastolic_BP, symptoms: payload.symptoms, notes: notes.trim() || undefined, inputSource: 'MANUAL', clientCreatedAt: record.date }).catch(() => undefined);
+      Alert.alert('Saved', 'Assessment saved locally. Run the bundled ONNX disease models from the Predictions screen.');
+    } catch { Alert.alert('Save failed', 'Unable to save the assessment.'); } finally { setSubmitting(false); }
   };
-
-  const calculateRiskLevel = (o2: number, hr: number, sBP: number): 'High' | 'Medium' | 'Low' => {
-    if ((!isNaN(o2) && o2 > 0 && o2 < 92) || (!isNaN(hr) && hr > 120) || (!isNaN(sBP) && sBP > 160)) {
-      return 'High';
-    }
-    if ((!isNaN(o2) && o2 > 0 && o2 < 95) || (!isNaN(hr) && hr > 100) || (!isNaN(sBP) && sBP > 140)) {
-      return 'Medium';
-    }
-    return 'Low';
-  };
-
-  const handleSave = async () => {
-    const o2Num = parseFloat(oxygenSaturation);
-    const hrNum = parseFloat(heartRate);
-    const sysNum = parseFloat(sysBP);
-    const diaNum = parseFloat(diaBP);
-
-    const calculatedRisk = calculateRiskLevel(o2Num, hrNum, sysNum);
-
-    const symptomArray = symptoms
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const historyArray = medicalHistory
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const medsArray = medications
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    try {
-      setSaving(true);
-      const storedAssessments = await AsyncStorage.getItem('healthAssessments');
-      let parsedAssessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
-
-      if (isEditing) {
-        parsedAssessments = parsedAssessments.map((item) => {
-          if (String(item.id).trim() === String(assessmentId).trim()) {
-            return {
-              ...item,
-              riskLevel: calculatedRisk,
-              risk_level: calculatedRisk,
-              symptoms: symptomArray,
-              medicalHistory: historyArray,
-              medical_history: historyArray,
-              medications: medsArray,
-              medication: medsArray,
-              additionalDetails: additionalDetails.trim(),
-              notes: additionalDetails.trim(),
-              vitals: {
-                ...(item.vitals || {}),
-                oxygenSaturation: !isNaN(o2Num) ? o2Num : item.vitals?.oxygenSaturation,
-                heartRate: !isNaN(hrNum) ? hrNum : item.vitals?.heartRate,
-                sysBP: !isNaN(sysNum) ? sysNum : item.vitals?.sysBP,
-                diaBP: !isNaN(diaNum) ? diaNum : item.vitals?.diaBP,
-              },
-              oxygenSaturation: !isNaN(o2Num) ? o2Num : item.oxygenSaturation,
-              heartRate: !isNaN(hrNum) ? hrNum : item.heartRate,
-              sysBP: !isNaN(sysNum) ? sysNum : item.sysBP,
-              diaBP: !isNaN(diaNum) ? diaNum : item.diaBP,
-            };
-          }
-          return item;
-        });
-      } else {
-        const newAssessment: Assessment = {
-          id: String(Date.now()),
-          patientId: patientId || 'unknown',
-          date: new Date().toISOString(),
-          riskLevel: calculatedRisk,
-          risk_level: calculatedRisk,
-          symptoms: symptomArray,
-          medicalHistory: historyArray,
-          medications: medsArray,
-          additionalDetails: additionalDetails.trim(),
-          vitals: {
-            oxygenSaturation: !isNaN(o2Num) ? o2Num : undefined,
-            heartRate: !isNaN(hrNum) ? hrNum : undefined,
-            sysBP: !isNaN(sysNum) ? sysNum : undefined,
-            diaBP: !isNaN(diaNum) ? diaNum : undefined,
-          },
-        };
-        parsedAssessments.unshift(newAssessment);
-      }
-
-      await AsyncStorage.setItem('healthAssessments', JSON.stringify(parsedAssessments));
-
-      Alert.alert(
-        'Success',
-        isEditing ? 'Assessment updated successfully!' : 'Assessment saved successfully!',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-    } catch (error) {
-      console.error('Failed to save assessment:', error);
-      Alert.alert('Error', 'Failed to save assessment.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0D9488" />
-        <Text style={styles.loadingText}>Loading Form Data...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backIconButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={20} color="#0F172A" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>
-            {isEditing ? 'Edit Health Assessment' : 'New Health Assessment'}
-          </Text>
-        </View>
-
-        {/* Form Container */}
-        <View style={styles.formCard}>
-          <Text style={styles.sectionTitle}>Vital Signs</Text>
-
-          {/* Oxygen */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Oxygen Saturation (SpO2 %)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. 98"
-              placeholderTextColor="#94A3B8"
-              keyboardType="numeric"
-              value={oxygenSaturation}
-              onChangeText={setOxygenSaturation}
-            />
-          </View>
-
-          {/* Heart Rate */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Heart Rate (bpm)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. 72"
-              placeholderTextColor="#94A3B8"
-              keyboardType="numeric"
-              value={heartRate}
-              onChangeText={setHeartRate}
-            />
-          </View>
-
-          {/* Blood Pressure Row */}
-          <View style={styles.rowInputs}>
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Systolic BP</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. 120"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={sysBP}
-                onChangeText={setSysBP}
-              />
-            </View>
-
-            <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.inputLabel}>Diastolic BP</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. 80"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={diaBP}
-                onChangeText={setDiaBP}
-              />
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <Text style={styles.sectionTitle}>Medical Context & Symptoms</Text>
-
-          {/* Medical History Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Medical History</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Diabetes, Hypertension"
-              placeholderTextColor="#94A3B8"
-              value={medicalHistory}
-              onChangeText={setMedicalHistory}
-            />
-          </View>
-
-          {/* Current Medications Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Current Medications</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Paracetamol, Rosuvas"
-              placeholderTextColor="#94A3B8"
-              value={medications}
-              onChangeText={setMedications}
-            />
-          </View>
-
-          {/* Symptoms Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Symptoms (comma-separated)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="e.g. Cough, Fever, Headache"
-              placeholderTextColor="#94A3B8"
-              value={symptoms}
-              onChangeText={setSymptoms}
-            />
-          </View>
-
-          {/* Additional Notes Input */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Additional Notes / Observations</Text>
-            <TextInput
-              style={[styles.textInput, styles.multilineInput]}
-              placeholder="Enter any extra details or clinical observations..."
-              placeholderTextColor="#94A3B8"
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-              value={additionalDetails}
-              onChangeText={setAdditionalDetails}
-            />
-          </View>
-
-          {/* Submit Button */}
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.disabledButton]}
-            onPress={handleSave}
-            disabled={saving}>
-            {saving ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.saveButtonText}>
-                {isEditing ? 'Update Assessment' : 'Save Assessment'}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#0D9488" /><Text style={styles.loadingText}>Loading assessment…</Text></View>;
+  const Input = ({ label, value, setValue, numeric = false, multiline = false }: { label: string; value: string; setValue: (text: string) => void; numeric?: boolean; multiline?: boolean }) => <View style={styles.inputGroup}><Text style={styles.label}>{label}</Text><TextInput style={[styles.input, multiline && styles.multiline]} value={value} onChangeText={setValue} keyboardType={numeric ? 'decimal-pad' : 'default'} multiline={multiline} textAlignVertical={multiline ? 'top' : 'center'} placeholderTextColor="#94A3B8" /></View>;
+  return <SafeAreaView style={styles.container}><ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><View style={styles.header}><TouchableOpacity onPress={() => router.back()}><Text style={styles.back}>‹</Text></TouchableOpacity><Text style={styles.title}>{isEditing ? 'Edit Assessment' : 'Patient Assessment'}</Text></View>
+    <View style={styles.card}><Text style={styles.section}>Patient Information</Text><Input label="Patient Full Name" value={name} setValue={setName} /><Input label="Age" value={age} setValue={setAge} numeric /><Text style={styles.label}>Gender</Text><View style={styles.chips}>{['Female', 'Male', 'Other'].map((item) => <TouchableOpacity key={item} style={[styles.chip, gender === item && styles.selectedChip]} onPress={() => setGender(item)}><Text style={[styles.chipText, gender === item && styles.selectedChipText]}>{item}</Text></TouchableOpacity>)}</View><Input label="Height (cm)" value={height} setValue={setHeight} numeric /><Input label="Weight (kg)" value={weight} setValue={setWeight} numeric /></View>
+    <View style={styles.card}><Text style={styles.section}>Vital Signs</Text><Input label="Temperature (°F)" value={temperature} setValue={setTemperature} numeric /><View style={styles.row}><View style={styles.flex}><Input label="Systolic BP" value={systolicBP} setValue={setSystolicBP} numeric /></View><View style={styles.flex}><Input label="Diastolic BP" value={diastolicBP} setValue={setDiastolicBP} numeric /></View></View><Input label="Heart Rate (bpm)" value={heartRate} setValue={setHeartRate} numeric /><Input label="SpO2 (%)" value={oxygen} setValue={setOxygen} numeric /></View>
+    <View style={styles.card}><Text style={styles.section}>Symptoms</Text><Text style={styles.label}>Quick Symptoms</Text><View style={styles.chips}>{quickSymptoms.map((item) => <TouchableOpacity key={item} style={[styles.chip, symptoms.includes(item) && styles.selectedChip]} onPress={() => toggle(item, setSymptoms)}><Text style={[styles.chipText, symptoms.includes(item) && styles.selectedChipText]}>{item}</Text></TouchableOpacity>)}</View><Input label="Additional Symptoms" value={additionalSymptoms} setValue={setAdditionalSymptoms} multiline /></View>
+    <View style={styles.card}><Text style={styles.section}>Medical History</Text><View style={styles.chips}>{historyOptions.map((item) => <TouchableOpacity key={item} style={[styles.chip, history.includes(item) && styles.selectedChip]} onPress={() => toggle(item, setHistory)}><Text style={[styles.chipText, history.includes(item) && styles.selectedChipText]}>{item}</Text></TouchableOpacity>)}</View><Input label="Current Medications" value={medications} setValue={setMedications} /><Input label="Additional Notes" value={notes} setValue={setNotes} multiline /></View>
+    <View style={styles.card}><Text style={styles.section}>Prescription Image OCR</Text><TouchableOpacity style={styles.secondaryButton} onPress={choosePrescription}><Text style={styles.secondaryText}>Unavailable offline</Text></TouchableOpacity></View>
+    <View style={styles.card}><Text style={styles.section}>Voice Input</Text><View style={styles.row}><TouchableOpacity style={[styles.secondaryButton, styles.flex]} onPress={() => void startRecording()} disabled={recorderState.isRecording || speechLoading}><Text style={styles.secondaryText}>{recorderState.isRecording ? 'Recording…' : 'Start Recording'}</Text></TouchableOpacity><TouchableOpacity style={[styles.stopButton, styles.flex]} onPress={() => void stopRecording()} disabled={!recorderState.isRecording || speechLoading}>{speechLoading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.stopText}>Stop Recording</Text>}</TouchableOpacity></View><Input label="Speech transcript" value={transcript} setValue={setTranscript} multiline /></View>
+    <View style={styles.card}><Text style={styles.section}>Disease Model Inputs</Text><Text style={styles.helper}>These values run locally against the bundled ONNX disease models.</Text>{modelInputFields.map(([key, label]) => <Input key={key} label={label} value={modelInputs[key] === undefined ? '' : String(modelInputs[key])} setValue={(value) => setModelInputs((current) => ({ ...current, [key]: value }))} numeric />)}</View>
+    <TouchableOpacity style={[styles.primaryButton, submitting && styles.disabled]} disabled={submitting} onPress={() => void saveAssessment()}>{submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.primaryText}>Save Assessment</Text>}</TouchableOpacity>
+  </ScrollView></SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#64748B',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  backIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  formCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 12,
-  },
-  inputGroup: {
-    marginBottom: 14,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
-  },
-  textInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#0F172A',
-  },
-  multilineInput: {
-    minHeight: 80,
-  },
-  rowInputs: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 12,
-  },
-  saveButton: {
-    backgroundColor: '#0D9488',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  disabledButton: {
-    opacity: 0.7,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-});
+const styles = StyleSheet.create({ container: { flex: 1, backgroundColor: '#F8FAFC' }, content: { padding: 16, paddingBottom: 36 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center' }, loadingText: { marginTop: 10, color: '#64748B' }, header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }, back: { color: '#0F172A', fontSize: 34, lineHeight: 34 }, title: { color: '#0F172A', fontSize: 22, fontWeight: '800' }, card: { backgroundColor: '#FFFFFF', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#E2E8F0' }, section: { color: '#0F172A', fontSize: 16, fontWeight: '800', marginBottom: 12 }, label: { color: '#334155', fontSize: 13, fontWeight: '700', marginBottom: 6 }, inputGroup: { marginBottom: 12 }, input: { borderColor: '#CBD5E1', borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, color: '#0F172A', backgroundColor: '#F8FAFC' }, multiline: { minHeight: 80 }, row: { flexDirection: 'row', gap: 10 }, flex: { flex: 1 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }, chip: { borderWidth: 1, borderColor: '#CBD5E1', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 }, selectedChip: { borderColor: '#0D9488', backgroundColor: '#CCFBF1' }, chipText: { color: '#475569', fontSize: 12, fontWeight: '600' }, selectedChipText: { color: '#0F766E' }, secondaryButton: { alignItems: 'center', justifyContent: 'center', minHeight: 45, borderRadius: 10, borderWidth: 1, borderColor: '#0D9488', backgroundColor: '#F0FDFA', padding: 10 }, secondaryText: { color: '#0F766E', fontWeight: '700' }, stopButton: { alignItems: 'center', justifyContent: 'center', minHeight: 45, borderRadius: 10, backgroundColor: '#DC2626', padding: 10 }, stopText: { color: '#FFFFFF', fontWeight: '700' }, result: { backgroundColor: '#F0FDFA', borderRadius: 10, padding: 12, marginTop: 12 }, resultLabel: { color: '#0F766E', fontWeight: '800', fontSize: 12, marginBottom: 5 }, resultText: { color: '#334155', lineHeight: 19 }, triageTitle: { color: '#0F766E', fontSize: 17, fontWeight: '800', marginBottom: 10 }, backendNote: { color: '#64748B', fontSize: 12, marginTop: 10, fontStyle: 'italic' }, helper: { color: '#64748B', fontSize: 12, lineHeight: 17, marginBottom: 12 }, primaryButton: { alignItems: 'center', justifyContent: 'center', minHeight: 52, borderRadius: 12, backgroundColor: '#0D9488', marginTop: 4 }, primaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' }, disabled: { opacity: 0.65 } });

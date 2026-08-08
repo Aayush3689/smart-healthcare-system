@@ -12,21 +12,72 @@ import {
   ScrollView,
 } from 'react-native';
 import { router } from 'expo-router';
+import { auth, AuthApiError } from '@/lib/auth';
+
+type Toast = { type: 'success' | 'error'; message: string };
 
 export default function LoginScreen() {
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [isRequestingOtp, setIsRequestingOtp] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [toast, setToast] = useState<Toast | null>(null);
 
-  const handleLogin = () => {
-    // Temporary validation.
-    // Real authentication will be connected later.
-    if (phone.length !== 10 || password.trim().length === 0) {
+  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const isOtpValid = otpRequested && /^\d{6}$/.test(otp);
+
+  const showToast = (type: Toast['type'], message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4500);
+  };
+
+  const handleGenerateOtp = async () => {
+    if (!isEmailValid) {
+      showToast('error', 'Enter a valid email address to receive a verification code.');
       return;
     }
 
-    // Go directly to Dashboard.
-    // No tabs are involved.
-    router.replace('/dashboard');
+    setIsRequestingOtp(true);
+    try {
+      const response = await auth.requestOtp(email.trim().toLowerCase());
+      setOtpRequested(true);
+      setOtp('');
+      showToast('success', response.message || 'Verification code sent. Please check your email.');
+    } catch (error) {
+      showToast('error', error instanceof AuthApiError ? error.message : 'We could not send a verification code. Please try again.');
+    } finally {
+      setIsRequestingOtp(false);
+    }
+  };
+
+  const handleEmailChange = (value: string) => {
+    setEmail(value);
+    setOtpRequested(false);
+    setOtp('');
+  };
+
+  const handleLogin = async () => {
+    if (!isEmailValid || !isOtpValid) {
+      showToast('error', 'Request a code, then enter the six-digit code from your email.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    try {
+      const response = await auth.verifyOtp(email.trim().toLowerCase(), otp);
+      if (response.data.user.role !== 'ASHA_WORKER') {
+        showToast('error', 'This account is not enabled for ASHA Worker access.');
+        return;
+      }
+      await auth.saveTokens(response.data.accessToken, response.data.refreshToken);
+      showToast('success', 'Welcome back! You are signed in.');
+      setTimeout(() => router.replace('/dashboard'), 700);
+    } catch (error) {
+      showToast('error', error instanceof AuthApiError ? error.message : 'We could not sign you in. Please try again.');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   return (
@@ -74,68 +125,74 @@ export default function LoginScreen() {
           {/* Login Card */}
           <View style={styles.card}>
 
-            {/* Mobile Number */}
+            {/* Gmail */}
             <Text style={styles.label}>
-              Mobile Number
+              Gmail
             </Text>
 
             <View style={styles.inputContainer}>
-
-              <Text style={styles.prefix}>
-                +91
-              </Text>
-
               <TextInput
                 style={styles.input}
-                placeholder="Enter mobile number"
+                placeholder="Enter your Gmail address"
                 placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-                maxLength={10}
-                value={phone}
-                onChangeText={setPhone}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="email"
+                textContentType="emailAddress"
+                value={email}
+                onChangeText={handleEmailChange}
               />
 
             </View>
 
-            {/* Password */}
+            <TouchableOpacity
+              style={[
+                styles.generateOtpButton,
+                (!isEmailValid || isRequestingOtp) && styles.generateOtpButtonDisabled,
+              ]}
+              activeOpacity={0.8}
+              onPress={() => void handleGenerateOtp()}
+              disabled={!isEmailValid || isRequestingOtp}
+            >
+              <Text style={styles.generateOtpButtonText}>
+                {isRequestingOtp ? 'Sending…' : otpRequested ? 'Resend OTP' : 'Send OTP'}
+              </Text>
+            </TouchableOpacity>
+
+            {/* One-time password */}
             <Text style={[styles.label, styles.passwordLabel]}>
-              Password
+              OTP
             </Text>
 
             <TextInput
               style={styles.passwordInput}
-              placeholder="Enter your password"
+              placeholder="Enter 6-digit OTP"
               placeholderTextColor="#94A3B8"
-              secureTextEntry
-              value={password}
-              onChangeText={setPassword}
+              keyboardType="number-pad"
+              maxLength={6}
+              textContentType="oneTimeCode"
+              value={otp}
+              onChangeText={setOtp}
             />
-
-            {/* Forgot Password */}
-            <TouchableOpacity
-              style={styles.forgotButton}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.forgotText}>
-                Forgot Password?
-              </Text>
-            </TouchableOpacity>
 
             {/* Login Button */}
             <TouchableOpacity
               style={[
                 styles.loginButton,
                 (
-                  phone.length !== 10 ||
-                  password.trim().length === 0
+                  !isEmailValid ||
+                  !isOtpValid ||
+                  isLoggingIn
                 ) && styles.loginButtonDisabled,
               ]}
               activeOpacity={0.8}
-              onPress={handleLogin}
+              onPress={() => void handleLogin()}
+              disabled={!isEmailValid || !isOtpValid || isLoggingIn}
             >
 
               <Text style={styles.loginButtonText}>
-                Login
+                {isLoggingIn ? 'Signing in…' : 'Login'}
               </Text>
 
               <Text style={styles.arrow}>
@@ -167,6 +224,11 @@ export default function LoginScreen() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+      {toast ? (
+        <View style={[styles.toast, toast.type === 'success' ? styles.toastSuccess : styles.toastError]}>
+          <Text style={styles.toastText}>{toast.message}</Text>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -266,17 +328,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
 
-  prefix: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#16323A',
-    marginRight: 8,
-  },
-
   input: {
     flex: 1,
     fontSize: 15,
     color: '#16323A',
+  },
+
+  generateOtpButton: {
+    alignSelf: 'flex-end',
+    marginTop: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#E9F7F5',
+  },
+
+  generateOtpButtonDisabled: {
+    opacity: 0.5,
+  },
+
+  generateOtpButtonText: {
+    color: '#0B6F69',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   passwordLabel: {
@@ -291,17 +365,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     fontSize: 15,
     color: '#16323A',
-  },
-
-  forgotButton: {
-    alignSelf: 'flex-end',
-    marginTop: 12,
-  },
-
-  forgotText: {
-    color: '#0B8F87',
-    fontSize: 13,
-    fontWeight: '600',
   },
 
   loginButton: {
@@ -367,4 +430,23 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 22,
   },
+
+  toast: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    bottom: 28,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+
+  toastSuccess: { backgroundColor: '#166534' },
+  toastError: { backgroundColor: '#B91C1C' },
+  toastText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', lineHeight: 20 },
 });

@@ -1,732 +1,123 @@
-import React, { useState, useCallback } from 'react';
-import {
-  StyleSheet,
-  View,
-  Text,
-  ScrollView,
-  ActivityIndicator,
-  TouchableOpacity,
-  SafeAreaView,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useCallback, useState } from 'react';
+import { ActivityIndicator, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { AssessmentModelInputs, getAssessmentPredictions, ModelName, ModelResult } from '@/lib/ai-predictions';
+import { offlineStorage } from '@/lib/offline-storage';
 
-interface Patient {
-  id: string | number;
-  name: string;
-  phone?: string;
-  age?: number | string;
-  gender?: string;
-  medicalHistory?: string[] | string;
-  medical_history?: string[] | string;
-  history?: string[] | string;
-  medications?: string[] | string;
-  medication?: string[] | string;
-  meds?: string[] | string;
-}
-
-interface Assessment {
+type Patient = { id: string | number; name?: string; age?: string | number; gender?: string };
+type Assessment = {
   id: string | number;
   patientId?: string | number;
   patient_id?: string | number;
   date?: string;
-  created_at?: string;
   createdAt?: string;
-  riskLevel?: 'High' | 'Medium' | 'Low' | string;
-  risk_level?: 'High' | 'Medium' | 'Low' | string;
-  risk?: 'High' | 'Medium' | 'Low' | string;
+  created_at?: string;
   symptoms?: string[] | string;
-  additionalDetails?: string;
-  additional_details?: string;
-  notes?: string;
   medicalHistory?: string[] | string;
   medical_history?: string[] | string;
-  history?: string[] | string;
   medications?: string[] | string;
   medication?: string[] | string;
-  meds?: string[] | string;
-  vitals?: Record<string, any>;
-  [key: string]: any;
-}
+  vitals?: Record<string, unknown>;
+  modelInputs?: AssessmentModelInputs;
+};
+
+const modelLabels: Record<ModelName, string> = {
+  diabetes: 'Diabetes model',
+  heart: 'Heart disease model',
+  hypertension: 'Hypertension model',
+};
+
+const toList = (value?: string[] | string) =>
+  Array.isArray(value) ? value.filter(Boolean) : value ? value.split(',').map((item) => item.trim()).filter(Boolean) : [];
+const getVital = (assessment: Assessment, ...keys: string[]) => {
+  const vitals = assessment.vitals || {};
+  return keys.map((key) => vitals[key]).find((value) => value !== undefined) ?? keys.map((key) => (assessment as Record<string, unknown>)[key]).find((value) => value !== undefined);
+};
+const getDate = (assessment: Assessment) => assessment.date || assessment.createdAt || assessment.created_at || '';
+const riskStyle = (risk: string) => {
+  const normalized = risk.toLowerCase();
+  if (normalized.includes('high') || normalized.includes('critical')) return styles.highRisk;
+  if (normalized.includes('medium')) return styles.mediumRisk;
+  return styles.lowRisk;
+};
 
 export default function PredictionScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [error, setError] = useState('');
+  const [cases, setCases] = useState<{ patient: Patient; assessment: Assessment; results: ModelResult[] }[]>([]);
 
-  // Format array or string lists cleanly
-  const formatList = (item?: string[] | string): string => {
-    if (!item) return '';
-    if (Array.isArray(item)) return item.filter(Boolean).join(', ');
-    if (typeof item === 'string') return item.trim();
-    return String(item);
-  };
-
-  // Helper to resolve Medical History from patient or assessment
-  const getMedicalHistory = (patient?: Patient, assessment?: Assessment): string => {
-    const fromPatient = patient
-      ? formatList(patient?.medicalHistory) ||
-        formatList(patient?.medical_history) ||
-        formatList(patient?.history)
-      : '';
-
-    const fromAssessment = assessment
-      ? formatList(assessment?.medicalHistory) ||
-        formatList(assessment?.medical_history) ||
-        formatList(assessment?.history)
-      : '';
-
-    return fromPatient || fromAssessment || '';
-  };
-
-  // Helper to resolve Medications from patient or assessment
-  const getMedications = (patient?: Patient, assessment?: Assessment): string => {
-    const fromPatient = patient
-      ? formatList(patient?.medications) ||
-        formatList(patient?.medication) ||
-        formatList(patient?.meds)
-      : '';
-
-    const fromAssessment = assessment
-      ? formatList(assessment?.medications) ||
-        formatList(assessment?.medication) ||
-        formatList(assessment?.meds)
-      : '';
-
-    return fromPatient || fromAssessment || '';
-  };
-
-  // Helper to resolve Additional Details
-  const getAdditionalDetails = (assessment?: Assessment): string => {
-    if (!assessment) return '';
-    return (
-      formatList(assessment?.additionalDetails) ||
-      formatList(assessment?.additional_details) ||
-      formatList(assessment?.notes) ||
-      ''
-    );
-  };
-
-  // Comprehensive helper to extract oxygen saturation
-  const getOxygen = (assessment?: Assessment) => {
-    if (!assessment) return undefined;
-    const v = assessment?.vitals || {};
-    return (
-      v.oxygenSaturation ??
-      v.oxygen ??
-      v.oxygen_level ??
-      v.oxygen_saturation ??
-      v.spo2 ??
-      v.spO2 ??
-      v.SpO2 ??
-      assessment.oxygenSaturation ??
-      assessment.oxygen ??
-      assessment.oxygen_level ??
-      assessment.oxygen_saturation ??
-      assessment.spo2 ??
-      assessment.spO2 ??
-      assessment.SpO2
-    );
-  };
-
-  // Comprehensive helper to extract heart rate
-  const getHeartRate = (assessment?: Assessment) => {
-    if (!assessment) return undefined;
-    const v = assessment?.vitals || {};
-    return (
-      v.heartRate ??
-      v.heart_rate ??
-      v.pulse ??
-      v.heartRateBpm ??
-      assessment.heartRate ??
-      assessment.heart_rate ??
-      assessment.pulse ??
-      assessment.heartRateBpm
-    );
-  };
-
-  // Helper to extract Systolic BP
-  const getSysBP = (assessment?: Assessment) => {
-    if (!assessment) return undefined;
-    const v = assessment?.vitals || {};
-    return v.sysBP ?? v.sys_bp ?? v.systolic ?? assessment.sysBP ?? assessment.sys_bp ?? assessment.systolic;
-  };
-
-  // Helper to extract Diastolic BP
-  const getDiaBP = (assessment?: Assessment) => {
-    if (!assessment) return undefined;
-    const v = assessment?.vitals || {};
-    return v.diaBP ?? v.dia_bp ?? v.diastolic ?? assessment.diaBP ?? assessment.dia_bp ?? assessment.diastolic;
-  };
-
-  // Helper to extract date
-  const getAssessmentDate = (assessment?: Assessment) => {
-    if (!assessment) return '';
-    return assessment?.date || assessment?.created_at || assessment?.createdAt || '';
-  };
-
-  // Helper to extract or dynamically calculate risk level
-  const getRiskLevel = (assessment?: Assessment): 'High' | 'Medium' | 'Low' => {
-    if (!assessment) return 'Low';
-
-    const explicitRisk = assessment?.riskLevel || assessment?.risk_level || assessment?.risk;
-    if (explicitRisk && ['High', 'Medium', 'Low'].includes(String(explicitRisk))) {
-      return explicitRisk as 'High' | 'Medium' | 'Low';
-    }
-
-    // Dynamic fallback calculation if risk level property is missing/unrecognized
-    const oxygen = Number(getOxygen(assessment));
-    const heartRate = Number(getHeartRate(assessment));
-    const sysBP = Number(getSysBP(assessment));
-
-    if ((!isNaN(oxygen) && oxygen < 92) || (!isNaN(heartRate) && heartRate > 120) || (!isNaN(sysBP) && sysBP > 160)) {
-      return 'High';
-    }
-
-    if ((!isNaN(oxygen) && oxygen < 95) || (!isNaN(heartRate) && heartRate > 100) || (!isNaN(sysBP) && sysBP > 140)) {
-      return 'Medium';
-    }
-
-    return 'Low';
-  };
-
-  const fetchData = async () => {
+  const loadPredictions = useCallback(async () => {
     try {
       setLoading(true);
+      setError('');
       const [storedPatients, storedAssessments] = await Promise.all([
-        AsyncStorage.getItem('patients'),
-        AsyncStorage.getItem('healthAssessments'),
+        offlineStorage.getItem('patients'),
+        offlineStorage.getItem('healthAssessments'),
       ]);
+      const patients: Patient[] = storedPatients ? JSON.parse(storedPatients) : [];
+      const assessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
+      const sorted = [...assessments].sort((a, b) => (new Date(getDate(b)).getTime() || 0) - (new Date(getDate(a)).getTime() || 0));
 
-      const parsedPatients: Patient[] = storedPatients ? JSON.parse(storedPatients) : [];
-      const parsedAssessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
-
-      setPatients(parsedPatients);
-      setAssessments(parsedAssessments);
-    } catch (error) {
-      console.error('Failed to load predictions data:', error);
+      const resolved = await Promise.all(sorted.map(async (assessment) => {
+        const patientId = assessment.patientId ?? assessment.patient_id;
+        const patient = patients.find((item) => String(item.id) === String(patientId)) || { id: String(patientId || 'unknown'), name: 'Unknown patient' };
+        const results = await getAssessmentPredictions({
+          age: patient.age,
+          gender: patient.gender,
+          assessment: assessment.modelInputs || {},
+          oxygen: getVital(assessment, 'oxygenSaturation', 'oxygen', 'spo2'),
+          heartRate: getVital(assessment, 'heartRate', 'heart_rate', 'pulse'),
+          systolicBP: getVital(assessment, 'sysBP', 'sys_bp', 'systolic'),
+          diastolicBP: getVital(assessment, 'diaBP', 'dia_bp', 'diastolic'),
+          symptoms: toList(assessment.symptoms),
+          medicalHistory: toList(assessment.medicalHistory || assessment.medical_history),
+          medications: toList(assessment.medications || assessment.medication),
+        });
+        return { patient, assessment, results };
+      }));
+      setCases(resolved);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load prediction data.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchData();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { void loadPredictions(); }, [loadPredictions]));
 
-  // Return EVERY assessment separately mapped to its patient
-  const getAllAssessmentCases = () => {
-    const sortedAssessments = [...assessments].sort((a, b) => {
-      const dateA = new Date(getAssessmentDate(a)).getTime() || 0;
-      const dateB = new Date(getAssessmentDate(b)).getTime() || 0;
-      return dateB - dateA;
-    });
-
-    return sortedAssessments.map((assessment) => {
-      const pId = assessment?.patientId ?? assessment?.patient_id;
-      const patient = patients.find((p) => String(p.id) === String(pId)) || {
-        id: pId || 'unknown',
-        name: pId ? `Patient #${pId}` : 'Unknown Patient',
-      };
-
-      return {
-        patient,
-        assessment,
-      };
-    });
-  };
-
-  const allCases = getAllAssessmentCases();
-
-  // Helper to construct transparent risk factor explanations
-  const getRiskExplanation = (assessment: Assessment) => {
-    const factors: string[] = [];
-
-    const oxygen = getOxygen(assessment);
-    const heartRate = getHeartRate(assessment);
-    const sysBP = getSysBP(assessment);
-
-    if (oxygen !== undefined && oxygen !== null && !isNaN(Number(oxygen))) {
-      const o2Num = Number(oxygen);
-      if (o2Num < 92) {
-        factors.push(`Low oxygen saturation (${o2Num}%)`);
-      } else if (o2Num < 95) {
-        factors.push(`Borderline oxygen saturation (${o2Num}%)`);
-      }
-    }
-
-    if (heartRate !== undefined && heartRate !== null && !isNaN(Number(heartRate))) {
-      const hrNum = Number(heartRate);
-      if (hrNum > 100) {
-        factors.push(`Elevated heart rate (${hrNum} bpm)`);
-      } else if (hrNum < 60) {
-        factors.push(`Low heart rate (${hrNum} bpm)`);
-      }
-    }
-
-    if (sysBP !== undefined && sysBP !== null && !isNaN(Number(sysBP))) {
-      const sNum = Number(sysBP);
-      if (sNum > 140) {
-        factors.push(`High systolic blood pressure (${sNum} mmHg)`);
-      }
-    }
-
-    const formattedSymptoms = formatList(assessment?.symptoms);
-    if (formattedSymptoms) {
-      factors.push(`Reported symptoms: ${formattedSymptoms}`);
-    }
-
-    const addDetails = getAdditionalDetails(assessment);
-    if (addDetails) {
-      factors.push(`Additional notes: ${addDetails}`);
-    }
-
-    if (factors.length === 0) {
-      factors.push('All recorded vital signs fall within standard baseline ranges.');
-    }
-
-    return factors;
-  };
-
-  const getRecommendedAction = (riskLevel: string) => {
-    switch (riskLevel) {
-      case 'High':
-        return 'Seek medical evaluation promptly. Urgent clinical intervention recommended.';
-      case 'Medium':
-        return 'Schedule a follow-up assessment within 24–48 hours and monitor vitals closely.';
-      case 'Low':
-      default:
-        return 'Continue routine monitoring and health maintenance.';
-    }
-  };
-
-  const getBadgeStyle = (riskLevel: string) => {
-    switch (riskLevel) {
-      case 'High':
-        return { bg: '#FEE2E2', text: '#991B1B', border: '#FCA5A5' };
-      case 'Medium':
-        return { bg: '#FEF3C7', text: '#92400E', border: '#FCD34D' };
-      case 'Low':
-      default:
-        return { bg: '#D1FAE5', text: '#065F46', border: '#6EE7B7' };
-    }
-  };
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0284C7" />
-        <Text style={styles.loadingText}>Loading AI Health Predictions...</Text>
-      </View>
-    );
-  }
+  if (loading) return <View style={styles.loading}><ActivityIndicator size="large" color="#0284C7" /><Text style={styles.loadingText}>Running AI models…</Text></View>;
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Header Section */}
-        <View style={styles.header}>
-          <Text style={styles.title}>AI Health Predictions</Text>
-          <Text style={styles.subtitle}>
-            Showing all {allCases.length} assessment records across all patients.
-          </Text>
-        </View>
-
-        {/* Clinical Disclaimer Banner */}
-        <View style={styles.disclaimerCard}>
-          <Ionicons name="information-circle-outline" size={22} color="#0369A1" />
-          <View style={styles.disclaimerTextContainer}>
-            <Text style={styles.disclaimerTitle}>App-Level Risk Assessment</Text>
-            <Text style={styles.disclaimerBody}>
-              Calculated automatically using recorded vital thresholds. This summary is intended to assist field triage and is not a formal medical diagnosis.
-            </Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}><Text style={styles.title}>AI Health Predictions</Text><Text style={styles.subtitle}>Results are returned directly by the integrated disease models.</Text></View>
+        <View style={styles.notice}><Ionicons name="information-circle-outline" size={21} color="#0369A1" /><Text style={styles.noticeText}>Predictions require the measured model inputs in each assessment. Missing inputs are shown clearly; no sample data or threshold-based predictions are used.</Text></View>
+        {error ? <View style={styles.error}><Text style={styles.errorText}>{error}</Text><TouchableOpacity onPress={() => void loadPredictions()}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View> : null}
+        {!error && cases.length === 0 ? <View style={styles.empty}><Ionicons name="analytics-outline" size={48} color="#94A3B8" /><Text style={styles.emptyTitle}>No assessments found</Text><Text style={styles.emptyText}>Create an assessment with the required model inputs to get AI predictions.</Text></View> : null}
+        {cases.map(({ patient, assessment, results }) => (
+          <View key={String(assessment.id)} style={styles.caseCard}>
+            <View style={styles.caseHeader}><View><Text style={styles.patientName}>{patient.name || 'Unnamed patient'}</Text><Text style={styles.date}>{getDate(assessment) ? new Date(getDate(assessment)).toLocaleDateString() : 'Assessment date unavailable'}</Text></View><TouchableOpacity onPress={() => router.push({ pathname: '/patient-details', params: { id: String(patient.id) } })}><Text style={styles.profile}>Patient profile</Text></TouchableOpacity></View>
+            {results.map((result) => <PredictionCard key={result.model} result={result} />)}
           </View>
-        </View>
-
-        {/* Assessment Cases List */}
-        {allCases.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="analytics-outline" size={48} color="#94A3B8" />
-            <Text style={styles.emptyTitle}>No Assessments Found</Text>
-            <Text style={styles.emptySubtitle}>
-              Perform health assessments on patients to view predictive risk analysis here.
-            </Text>
-          </View>
-        ) : (
-          allCases.map(({ patient, assessment }, index) => {
-            const oxygen = getOxygen(assessment);
-            const heartRate = getHeartRate(assessment);
-            const sysBP = getSysBP(assessment);
-            const diaBP = getDiaBP(assessment);
-            const rawDate = getAssessmentDate(assessment);
-            const riskLevel = getRiskLevel(assessment);
-
-            const badge = getBadgeStyle(riskLevel);
-            const riskFactors = getRiskExplanation(assessment);
-            const recommendedAction = getRecommendedAction(riskLevel);
-
-            const symptomsStr = formatList(assessment?.symptoms);
-            const medHistoryStr = getMedicalHistory(patient, assessment);
-            const medicationsStr = getMedications(patient, assessment);
-            const additionalDetailsStr = getAdditionalDetails(assessment);
-
-            return (
-              <View key={`${assessment.id}-${index}`} style={styles.card}>
-                {/* Patient Header & Risk Badge */}
-                <View style={styles.cardHeader}>
-                  <View>
-                    <Text style={styles.patientName}>{patient.name}</Text>
-                    <Text style={styles.assessmentDate}>
-                      Assessment Date: {rawDate ? new Date(rawDate).toLocaleDateString() : 'N/A'}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.riskBadge,
-                      { backgroundColor: badge.bg, borderColor: badge.border },
-                    ]}>
-                    <Text style={[styles.riskBadgeText, { color: badge.text }]}>
-                      {riskLevel} Risk
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.divider} />
-
-                {/* Vitals Summary */}
-                <View style={styles.section}>
-                  <Text style={styles.sectionTitle}>Vital Signs & Metrics</Text>
-                  <View style={styles.vitalsRow}>
-                    <View style={styles.vitalMetric}>
-                      <Text style={styles.vitalLabel}>Oxygen (SpO2)</Text>
-                      <Text style={styles.vitalValue}>
-                        {oxygen !== undefined && oxygen !== null && oxygen !== '' ? `${oxygen}%` : 'N/A'}
-                      </Text>
-                    </View>
-                    <View style={styles.vitalMetric}>
-                      <Text style={styles.vitalLabel}>Heart Rate</Text>
-                      <Text style={styles.vitalValue}>
-                        {heartRate !== undefined && heartRate !== null && heartRate !== '' ? `${heartRate} bpm` : 'N/A'}
-                      </Text>
-                    </View>
-                    {sysBP !== undefined && diaBP !== undefined && (
-                      <View style={styles.vitalMetric}>
-                        <Text style={styles.vitalLabel}>BP</Text>
-                        <Text style={styles.vitalValue}>
-                          {sysBP}/{diaBP}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                {/* Symptoms & Medical Background */}
-                <View style={styles.infoGrid}>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>Symptoms:</Text>
-                    <Text style={styles.infoValue}>
-                      {symptomsStr || 'None reported'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>Medical History:</Text>
-                    <Text style={styles.infoValue}>
-                      {medHistoryStr || 'None recorded'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>Current Medication:</Text>
-                    <Text style={styles.infoValue}>
-                      {medicationsStr || 'None recorded'}
-                    </Text>
-                  </View>
-
-                  {additionalDetailsStr ? (
-                    <View style={styles.infoItem}>
-                      <Text style={styles.infoLabel}>Additional Details:</Text>
-                      <Text style={styles.infoValue}>{additionalDetailsStr}</Text>
-                    </View>
-                  ) : null}
-                </View>
-
-                {/* Risk Factors Explanation */}
-                <View style={styles.explanationBox}>
-                  <Text style={styles.explanationTitle}>Classification Drivers</Text>
-                  {riskFactors.map((factor, idx) => (
-                    <View key={idx} style={styles.bulletRow}>
-                      <Text style={styles.bulletPoint}>•</Text>
-                      <Text style={styles.bulletText}>{factor}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* Actionable Recommendations */}
-                <View style={styles.actionBox}>
-                  <Text style={styles.actionTitle}>Recommended Action</Text>
-                  <Text style={styles.actionText}>{recommendedAction}</Text>
-                </View>
-
-                {/* Patient Navigation Button */}
-                <TouchableOpacity
-                  style={styles.detailsButton}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/patient-details',
-                      params: { id: String(patient.id) },
-                    })
-                  }>
-                  <Text style={styles.detailsButtonText}>View Patient Profile</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#0284C7" />
-                </TouchableOpacity>
-              </View>
-            );
-          })
-        )}
+        ))}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+function PredictionCard({ result }: { result: ModelResult }) {
+  if ('error' in result) return <View style={styles.unavailable}><Text style={styles.modelName}>{modelLabels[result.model]}</Text><Text style={styles.unavailableText}>{result.error}</Text></View>;
+  const { prediction } = result;
+  return <View style={styles.resultCard}><View style={styles.resultHeader}><Text style={styles.modelName}>{modelLabels[result.model]}</Text><View style={[styles.risk, riskStyle(prediction.risk_level)]}><Text style={styles.riskText}>{prediction.risk_level}</Text></View></View>
+    <Text style={styles.outcome}>{prediction.prediction === 1 ? 'Positive prediction' : 'Negative prediction'}</Text>
+    {prediction.probability !== null ? <Text style={styles.probability}>Model probability: {(prediction.probability * 100).toFixed(1)}%</Text> : null}
+    {prediction.reasons?.length ? <View style={styles.reasonBox}><Text style={styles.reasonTitle}>Model factors</Text>{prediction.reasons.map((reason) => <Text key={reason} style={styles.reason}>• {reason}</Text>)}</View> : null}
+    <Text style={styles.triageTitle}>Inference</Text><Text style={styles.triage}>{prediction.triage}</Text>
+  </View>;
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#64748B',
-  },
-  header: {
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 4,
-  },
-  disclaimerCard: {
-    flexDirection: 'row',
-    backgroundColor: '#E0F2FE',
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 20,
-    alignItems: 'flex-start',
-  },
-  disclaimerTextContainer: {
-    marginLeft: 10,
-    flex: 1,
-  },
-  disclaimerTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0369A1',
-    marginBottom: 2,
-  },
-  disclaimerBody: {
-    fontSize: 12,
-    color: '#0284C7',
-    lineHeight: 17,
-  },
-  emptyCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginTop: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#334155',
-    marginTop: 12,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: '#94A3B8',
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  patientName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  assessmentDate: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  riskBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  riskBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#F1F5F9',
-    marginVertical: 12,
-  },
-  section: {
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  vitalsRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    justifyContent: 'space-around',
-  },
-  vitalMetric: {
-    alignItems: 'center',
-  },
-  vitalLabel: {
-    fontSize: 11,
-    color: '#64748B',
-    marginBottom: 2,
-  },
-  vitalValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  infoGrid: {
-    marginBottom: 12,
-    gap: 6,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  infoLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-    marginRight: 6,
-  },
-  infoValue: {
-    fontSize: 13,
-    color: '#64748B',
-    flex: 1,
-  },
-  explanationBox: {
-    backgroundColor: '#FFFBEB',
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 10,
-  },
-  explanationTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#92400E',
-    marginBottom: 6,
-  },
-  bulletRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 3,
-  },
-  bulletPoint: {
-    fontSize: 14,
-    color: '#B45309',
-    marginRight: 6,
-  },
-  bulletText: {
-    fontSize: 12,
-    color: '#78350F',
-    flex: 1,
-  },
-  actionBox: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-  },
-  actionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#166534',
-    marginBottom: 4,
-  },
-  actionText: {
-    fontSize: 12,
-    color: '#15803D',
-    lineHeight: 16,
-  },
-  detailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    marginTop: 4,
-  },
-  detailsButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0284C7',
-    marginRight: 4,
-  },
+  container: { flex: 1, backgroundColor: '#F8FAFC' }, content: { padding: 16, paddingBottom: 32 }, loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' }, loadingText: { marginTop: 12, color: '#64748B' }, header: { marginBottom: 16 }, title: { fontSize: 24, fontWeight: '700', color: '#0F172A' }, subtitle: { marginTop: 4, color: '#64748B', lineHeight: 20 }, notice: { flexDirection: 'row', gap: 10, padding: 12, borderRadius: 12, backgroundColor: '#E0F2FE', marginBottom: 16 }, noticeText: { flex: 1, color: '#0369A1', fontSize: 12, lineHeight: 17 }, error: { padding: 14, borderRadius: 12, backgroundColor: '#FEE2E2', marginBottom: 16 }, errorText: { color: '#991B1B' }, retry: { color: '#B91C1C', fontWeight: '700', marginTop: 8 }, empty: { padding: 32, alignItems: 'center', backgroundColor: '#FFF', borderRadius: 16 }, emptyTitle: { color: '#334155', fontWeight: '700', fontSize: 18, marginTop: 12 }, emptyText: { color: '#64748B', textAlign: 'center', marginTop: 6, lineHeight: 20 }, caseCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 16 }, caseHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }, patientName: { fontSize: 18, fontWeight: '700', color: '#0F172A' }, date: { color: '#64748B', fontSize: 12, marginTop: 2 }, profile: { color: '#0284C7', fontWeight: '600', fontSize: 12 }, resultCard: { padding: 12, borderRadius: 12, backgroundColor: '#F8FAFC', marginTop: 10 }, unavailable: { padding: 12, borderRadius: 12, backgroundColor: '#FFF7ED', marginTop: 10 }, unavailableText: { color: '#9A3412', fontSize: 12, lineHeight: 17, marginTop: 4 }, resultHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 }, modelName: { color: '#334155', fontWeight: '700' }, risk: { borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 }, highRisk: { backgroundColor: '#FEE2E2' }, mediumRisk: { backgroundColor: '#FEF3C7' }, lowRisk: { backgroundColor: '#DCFCE7' }, riskText: { color: '#334155', fontSize: 11, fontWeight: '700' }, outcome: { color: '#0F172A', fontWeight: '600', marginTop: 9 }, probability: { color: '#475569', fontSize: 12, marginTop: 3 }, reasonBox: { marginTop: 10 }, reasonTitle: { color: '#475569', fontSize: 12, fontWeight: '700' }, reason: { color: '#64748B', fontSize: 12, marginTop: 3 }, triageTitle: { color: '#475569', fontSize: 12, fontWeight: '700', marginTop: 10 }, triage: { color: '#334155', fontSize: 12, lineHeight: 17, marginTop: 3 },
 });

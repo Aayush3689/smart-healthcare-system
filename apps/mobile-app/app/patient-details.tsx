@@ -9,7 +9,7 @@ import {
   SafeAreaView,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { offlineStorage } from '@/lib/offline-storage';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -73,10 +73,10 @@ export default function PatientDetailsScreen() {
     return String(symptoms);
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const storedAssessments = await AsyncStorage.getItem('healthAssessments');
+      const storedAssessments = await offlineStorage.getItem('healthAssessments');
       const parsedAssessments: Assessment[] = storedAssessments ? JSON.parse(storedAssessments) : [];
 
       const targetIdStr = String(id).trim();
@@ -100,12 +100,12 @@ export default function PatientDetailsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id]);
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [id])
+      void loadData();
+    }, [loadData])
   );
 
   // Filter assessment history by selected risk tab
@@ -223,7 +223,7 @@ export default function PatientDetailsScreen() {
                 onPress={() =>
                   router.push({
                     pathname: '/assessment_details',
-                    params: { id: String(assessment.id) },
+                    params: { assessmentId: String(assessment.id) },
                   })
                 }>
                 <View style={styles.cardIconBox}>
