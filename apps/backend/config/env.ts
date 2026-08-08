@@ -41,4 +41,13 @@ export const env = Object.freeze({
   nodeEnv,
   port,
   databaseUrl: required("DATABASE_URL"),
+  jwtSecret: required("JWT_SECRET"),
+  smtp: {
+    host: required("SMTP_HOST"),
+    port: Number(process.env.SMTP_PORT ?? 587),
+    secure: process.env.SMTP_SECURE === "true",
+    from: required("SMTP_FROM"),
+    user: required("SMTP_USER"),
+    password: required("SMTP_PASSWORD"),
+  },
 });

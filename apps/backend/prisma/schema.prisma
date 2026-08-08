@@ -4,5 +4,161 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Prisma 6 still requires this field during schema validation. The CLI URL
+  // and migration settings are configured in ../prisma.config.ts.
   url      = env("DATABASE_URL")
+}
+
+enum Role {
+  PHC_ADMIN
+  DOCTOR
+  ASHA_WORKER
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  INACTIVE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum Platform {
+  MOBILE_APP
+  DOCTOR_DASHBOARD
+  ADMIN_DASHBOARD
+}
+
+model User {
+  id              String     @id @default(uuid())
+  email           String     @unique
+  role            Role
+  status          UserStatus @default(INVITED)
+  isEmailVerified Boolean    @default(false)
+  invitedById     String?
+  invitedBy       User?      @relation("UserInvitations", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers    User[]     @relation("UserInvitations")
+  lastLoginAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  ashaProfile      AshaWorkerProfile?
+  doctorProfile    DoctorProfile?
+  adminProfile     AdminProfile?
+  refreshTokens    RefreshToken[]
+  otpVerifications OtpVerification[]
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model AshaWorkerProfile {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName     String
+  employeeCode String   @unique
+  villageId    String
+  village      Village  @relation(fields: [villageId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([villageId])
+  @@map("asha_worker_profiles")
+}
+
+model DoctorProfile {
+  id             String               @id @default(uuid())
+  userId         String               @unique
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName       String
+  specialization String?
+  phcId          String
+  phc            PrimaryHealthCentre @relation(fields: [phcId], references: [id])
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([phcId])
+  @@map("doctor_profiles")
+}
+
+model AdminProfile {
+  id        String               @id @default(uuid())
+  userId    String               @unique
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName  String
+  phcId     String
+  phc       PrimaryHealthCentre @relation(fields: [phcId], references: [id])
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([phcId])
+  @@map("admin_profiles")
+}
+
+model PrimaryHealthCentre {
+  id        String               @id @default(uuid())
+  name      String
+  code      String               @unique
+  address   String
+  district  String
+  state     String
+  phone     String?
+  villages  Village[]
+  doctors   DoctorProfile[]
+  admins    AdminProfile[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@map("primary_health_centres")
+}
+
+model Village {
+  id          String                 @id @default(uuid())
+  name        String
+  district    String
+  state       String
+  population  Int?
+  phcId       String?
+  phc         PrimaryHealthCentre?  @relation(fields: [phcId], references: [id])
+  ashaWorkers AshaWorkerProfile[]
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  @@index([phcId])
+  @@map("villages")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  platform  Platform
+  deviceId  String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model OtpVerification {
+  id         String    @id @default(uuid())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  email      String
+  otpHash    String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  verifiedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([email])
+  @@map("otp_verifications")
 }
