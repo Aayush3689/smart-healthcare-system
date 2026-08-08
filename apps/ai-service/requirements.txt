@@ -1,0 +1,13 @@
+numpy
+pandas
+scikit-learn
+onnx
+onnxruntime
+skl2onnx
+joblib
+fastapi
+uvicorn
+onnxruntime
+numpy
+easyocr
+python-multipart

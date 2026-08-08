@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Environment Variables
+.env
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+
+
+# Python Build Files
+build/
+dist/
+*.egg-info/
+
+# Model Training Artifacts
+*.pkl
+*.joblib
+
+# Temporary OCR / Upload Files
+uploads/
+temp/
+*.wav
+*.mp3
+
+# Test Cache
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
