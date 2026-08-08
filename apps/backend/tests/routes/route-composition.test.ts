@@ -15,6 +15,7 @@ test("API index mounts every completed top-level resource exactly once", async (
     "appointments",
     "doctors",
     "phc",
+    "phc-dashboard",
     "clinical-notes",
     "patients",
     "follow-ups",

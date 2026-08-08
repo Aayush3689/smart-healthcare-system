@@ -39,9 +39,9 @@ extraction and terminal status.
 
 ## Offline synchronization
 
-The ASHA client uses `POST /api/v1/sync`, `GET /api/v1/sync/status?deviceId=...`,
-and `GET /api/v1/sync/changes?cursor=...`. The sync module reserves each
-`operationId` before applying it, replays the stored result for duplicate IDs,
-processes operations in request order, preserves client patient/assessment UUIDs,
-and returns a result for every operation. Clinical record deletion and mutation
-of assessment snapshots are rejected and recorded as failed operations.
+The ASHA client uses `POST /api/v1/sync/push`, `GET /api/v1/sync/pull`,
+`GET /api/v1/sync/status`, and `POST /api/v1/sync/retry`. The sync module reserves
+each `changeId` before applying it, replays stored results for duplicate IDs,
+processes changes in request order, and isolates partial failures. Pull uses an
+opaque stable cursor and includes scoped patients, assessments, predictions,
+follow-ups, appointments, and referrals. See [Offline Sync API](./offline-sync.md).

@@ -37,11 +37,17 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   throw new Error("PORT must be a valid TCP port number.");
 }
 
+const corsOrigins = (process.env.CORS_ORIGINS ?? "*")
+  .split(",")
+  .map((origin) => origin.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
 export const env = Object.freeze({
   nodeEnv,
   port,
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
+  corsOrigins,
   ai: {
     baseUrl: process.env.AI_SERVICE_URL ?? "http://localhost:8000",
     timeoutMs: Number(process.env.AI_SERVICE_TIMEOUT_MS ?? 15000),

@@ -42,6 +42,9 @@ import { ReferralController } from "../modules/referrals/controller.js";
 import { SyncController } from "../modules/sync/controller.js";
 import { SyncRepository } from "../modules/sync/repository.js";
 import { SyncService } from "../modules/sync/service.js";
+import { PhcDashboardController } from "../modules/phc-dashboard/controller.js";
+import { PhcDashboardRepository } from "../modules/phc-dashboard/repository.js";
+import { PhcDashboardService } from "../modules/phc-dashboard/service.js";
 import { JwtService } from "../utils/jwt.js";
 
 export const jwtService = new JwtService(env.jwtSecret);
@@ -82,6 +85,9 @@ export const followUpService = new FollowUpService(new FollowUpRepository(prisma
 export const followUpController = new FollowUpController(followUpService);
 export const phcService = new PhcService(new PhcRepository(prisma), accessPolicy);
 export const phcController = new PhcController(phcService);
+export const phcDashboardController = new PhcDashboardController(
+  new PhcDashboardService(new PhcDashboardRepository(prisma), accessPolicy),
+);
 export const villageService = new VillageService(new VillageRepository(prisma), accessPolicy);
 export const villageController = new VillageController(villageService);
 export const ashaService = new AshaService(
@@ -93,5 +99,11 @@ export const ashaService = new AshaService(
 );
 export const ashaController = new AshaController(ashaService);
 export const syncController = new SyncController(
-  new SyncService(new SyncRepository(prisma), accessPolicy, ashaService),
+  new SyncService(
+    new SyncRepository(prisma),
+    accessPolicy,
+    ashaService,
+    predictionService,
+    followUpService,
+  ),
 );

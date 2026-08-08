@@ -1,1 +1,1 @@
-export { SyncRoutes } from "./routes.js";
+export { syncRoutes } from "./routes.js";

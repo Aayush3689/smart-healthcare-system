@@ -125,6 +125,7 @@ enum SyncOperationType {
 enum SyncStatus {
   PENDING
   SYNCED
+  CONFLICT
   FAILED
 }
 
@@ -187,6 +188,7 @@ model User {
   referralHistory    ReferralHistory[]
   appointmentHistory AppointmentHistory[]
   followUpHistory    FollowUpHistory[]
+  syncOperations     SyncOperation[]
 
   @@index([role, status])
   @@map("users")
@@ -842,8 +844,11 @@ model Notification {
 model SyncOperation {
   id String @id @default(uuid())
 
-  operationId String @unique
+  operationId String
   deviceId    String
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   entityType String
   entityId   String
@@ -852,12 +857,18 @@ model SyncOperation {
   status SyncStatus @default(PENDING)
 
   payload      Json?
+  result       Json?
   errorCode    String?
   errorMessage String?
 
-  processedAt DateTime?
-  createdAt   DateTime  @default(now())
+  clientCreatedAt DateTime
+  processedAt     DateTime?
+  retryCount      Int       @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
+  @@unique([userId, operationId])
+  @@index([userId, deviceId, status])
   @@index([deviceId])
   @@index([entityType, entityId])
   @@map("sync_operations")

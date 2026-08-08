@@ -4,7 +4,6 @@ import {
   assessmentController,
   authController,
   authMiddleware,
-  syncController,
   predictionController,
 } from "../container/index.js";
 import { ashaRoutes } from "../modules/asha/index.js";
@@ -18,7 +17,7 @@ import {
   predictionPatientParamValidation,
 } from "../modules/predictions/validation.js";
 import { AuthRoutes } from "../modules/auth/index.js";
-import { SyncRoutes } from "../modules/sync/index.js";
+import { syncRoutes } from "../modules/sync/index.js";
 import {
   doctorReferralRoutes,
   phcReferralRoutes,
@@ -44,6 +43,7 @@ import {
   phcFollowUpRoutes,
 } from "../modules/follow-ups/index.js";
 import { phcRoutes } from "../modules/phcs/index.js";
+import { phcDashboardRoutes } from "../modules/phc-dashboard/index.js";
 import { ashaVillageRoutes, phcVillageRoutes, villageRoutes } from "../modules/villages/index.js";
 
 const ashaApiRoutes = Router();
@@ -106,14 +106,12 @@ export class ApiRoutes {
     this.router.use("/appointments", appointmentRoutes);
     this.router.use("/doctors", doctorApiRoutes);
     this.router.use("/phc", phcApiRoutes);
+    this.router.use("/phc-dashboard", phcDashboardRoutes);
     this.router.use("/clinical-notes", clinicalNoteRoutes);
     this.router.use("/patients", patientApiRoutes);
     this.router.use("/follow-ups", followUpRoutes);
     this.router.use("/villages", villageRoutes);
-    this.router.use(
-      "/sync",
-      new SyncRoutes(syncController, authMiddleware, activeAccountMiddleware).router,
-    );
+    this.router.use("/sync", syncRoutes);
   }
 }
 export const routes = new ApiRoutes().router;
