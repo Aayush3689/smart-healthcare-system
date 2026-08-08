@@ -13,11 +13,15 @@ from utils.triage import (
     get_triage_action
 )
 
+from utils.clinical_risk import (
+    calculate_clinical_risk
+)
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# ===========================
-# Load ONNX Models
-# ===========================
+# =====================================
+# Load Models (Load Once)
+# =====================================
 
 diabetes_model = Predictor(
     BASE_DIR / "models" / "diabetes" / "diabetes_model.onnx"
@@ -31,9 +35,9 @@ hypertension_model = Predictor(
     BASE_DIR / "models" / "hypertension" / "hypertension_model.onnx"
 )
 
-# ===========================
+# =====================================
 # Diabetes Prediction
-# ===========================
+# =====================================
 
 def predict_diabetes(patient):
 
@@ -50,26 +54,36 @@ def predict_diabetes(patient):
 
     result = diabetes_model.predict(features)
 
+    # Risk Level
     risk = get_risk_level(
         result["probability"]
     )
 
     result["risk_level"] = risk
 
+    # Triage
     result["triage"] = get_triage_action(
         risk
     )
 
+    # Explainability
     result["reasons"] = explain_diabetes(
         patient
     )
 
+    # Clinical Risk Engine
+    clinical = calculate_clinical_risk(
+        patient
+    )
+
+    result.update(clinical)
+
     return result
 
 
-# ===========================
+# =====================================
 # Heart Disease Prediction
-# ===========================
+# =====================================
 
 def predict_heart(patient):
 
@@ -91,26 +105,36 @@ def predict_heart(patient):
 
     result = heart_model.predict(features)
 
+    # Risk Level
     risk = get_risk_level(
         result["probability"]
     )
 
     result["risk_level"] = risk
 
+    # Triage
     result["triage"] = get_triage_action(
         risk
     )
 
+    # Explainability
     result["reasons"] = explain_heart(
         patient
     )
 
+    # Clinical Risk Engine
+    clinical = calculate_clinical_risk(
+        patient
+    )
+
+    result.update(clinical)
+
     return result
 
 
-# ===========================
+# =====================================
 # Hypertension Prediction
-# ===========================
+# =====================================
 
 def predict_hypertension(patient):
 
@@ -129,18 +153,28 @@ def predict_hypertension(patient):
 
     result = hypertension_model.predict(features)
 
+    # Risk Level
     risk = get_risk_level(
         result["probability"]
     )
 
     result["risk_level"] = risk
 
+    # Triage
     result["triage"] = get_triage_action(
         risk
     )
 
+    # Explainability
     result["reasons"] = explain_hypertension(
         patient
     )
+
+    # Clinical Risk Engine
+    clinical = calculate_clinical_risk(
+        patient
+    )
+
+    result.update(clinical)
 
     return result

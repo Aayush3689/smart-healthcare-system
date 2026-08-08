@@ -5,9 +5,11 @@ onnx
 onnxruntime
 skl2onnx
 joblib
+
 fastapi
-uvicorn
-onnxruntime
-numpy
-easyocr
+uvicorn[standard]
 python-multipart
+
+easyocr
+
+gtts
