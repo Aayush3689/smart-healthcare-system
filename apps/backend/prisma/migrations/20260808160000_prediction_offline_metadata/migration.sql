@@ -1,0 +1,8 @@
+ALTER TABLE "predictions"
+ADD COLUMN "deviceId" TEXT,
+ADD COLUMN "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE "prediction_reasons"
+ADD COLUMN "feature" TEXT,
+ADD COLUMN "value" JSONB,
+ADD COLUMN "message" TEXT;
