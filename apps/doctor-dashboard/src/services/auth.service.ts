@@ -1,33 +1,99 @@
-import { User, Role } from '../types';
-import { mockUsers } from '../data/mockUsers';
+import { User } from '../types';
+import { api } from './api';
+import { authStorage } from './auth.storage';
+
+type ApiRole = 'DOCTOR' | 'PHC_ADMIN';
+
+interface ApiUser {
+  id: string;
+  email: string;
+  role: ApiRole;
+  status: string;
+  isEmailVerified: boolean;
+}
+
+interface ApiEnvelope<T> {
+  success: boolean;
+  message: string;
+  data: T;
+}
+
+interface LoginData {
+  user: ApiUser;
+  accessToken: string;
+  refreshToken: string;
+}
+
+const toDashboardUser = (user: ApiUser): User => {
+  if (user.role !== 'DOCTOR' && user.role !== 'PHC_ADMIN') {
+    throw new Error('This account is not permitted to access the doctor dashboard.');
+  }
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.role === 'DOCTOR' ? 'Doctor' : 'PHC Administrator',
+    role: user.role === 'DOCTOR' ? 'doctor' : 'admin',
+  };
+};
 
 export const authService = {
-  async login(email: string, role: Role): Promise<{ user: User; token: string }> {
-    await new Promise((res) => setTimeout(res, 400));
-    const matchedUser = mockUsers.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    
-    const user: User = matchedUser || {
-      id: `usr-${Date.now()}`,
-      name: role === 'doctor' ? 'Dr. Tariq Khan' : 'Ananya Sharma',
+  async requestOtp(email: string): Promise<string> {
+    const response = await api.post<ApiEnvelope<null>>('/auth/request-otp', { email });
+    return response.data.message;
+  },
+
+  async verifyOtp(email: string, otp: string): Promise<User> {
+    const deviceId = this.getDeviceId();
+    const response = await api.post<ApiEnvelope<LoginData>>('/auth/verify-otp', {
       email,
-      role,
-      specialization: role === 'doctor' ? 'General Medicine' : undefined
-    };
-
-    const token = `mock_jwt_token_${user.id}_${Date.now()}`;
-    localStorage.setItem('healthai_user', JSON.stringify(user));
-    localStorage.setItem('healthai_auth_token', token);
-
-    return { user, token };
+      otp,
+      platform: 'DOCTOR_DASHBOARD',
+      deviceId,
+    });
+    const { user: apiUser, accessToken, refreshToken } = response.data.data;
+    const user = toDashboardUser(apiUser);
+    authStorage.setSession(accessToken, refreshToken, user);
+    return user;
   },
 
   getCurrentUser(): User | null {
-    const raw = localStorage.getItem('healthai_user');
-    return raw ? JSON.parse(raw) : null;
+    const raw = authStorage.getUser();
+    try {
+      return raw ? (JSON.parse(raw) as User) : null;
+    } catch {
+      authStorage.clear();
+      return null;
+    }
   },
 
-  logout(): void {
-    localStorage.removeItem('healthai_user');
-    localStorage.removeItem('healthai_auth_token');
+  async validateSession(): Promise<User | null> {
+    if (!authStorage.getAccessToken() || !authStorage.getRefreshToken()) return null;
+    const response = await api.get<ApiEnvelope<ApiUser>>('/auth/me');
+    const user = toDashboardUser(response.data.data);
+    const accessToken = authStorage.getAccessToken();
+    const refreshToken = authStorage.getRefreshToken();
+    if (accessToken && refreshToken) authStorage.setSession(accessToken, refreshToken, user);
+    return user;
+  },
+
+  async logout(): Promise<void> {
+    const refreshToken = authStorage.getRefreshToken();
+    authStorage.clear();
+    if (!refreshToken) return;
+    try {
+      await api.post('/auth/logout', { refreshToken });
+    } catch {
+      // The local session is already cleared; a revoked/expired token needs no further action.
+    }
+  },
+
+  getDeviceId(): string {
+    const key = 'healthai_device_id';
+    let deviceId = localStorage.getItem(key);
+    if (!deviceId) {
+      deviceId = crypto.randomUUID();
+      localStorage.setItem(key, deviceId);
+    }
+    return deviceId;
   }
 };

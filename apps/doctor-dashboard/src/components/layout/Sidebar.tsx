@@ -15,7 +15,9 @@ import {
   UserCheck,
   LogOut,
   Stethoscope,
-  Activity
+  Activity,
+  CalendarDays,
+  RefreshCw
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -27,8 +29,8 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ role, isOpen, onClose }) => {
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    authService.logout();
+  const handleLogout = async () => {
+    await authService.logout();
     navigate('/login');
   };
 
@@ -38,14 +40,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ role, isOpen, onClose }) => {
     { to: '/doctor/assessments', label: 'Assessments', icon: ClipboardList },
     { to: '/doctor/predictions', label: 'AI Predictions', icon: Brain },
     { to: '/doctor/referrals', label: 'Referrals', icon: Share2 },
+    { to: '/doctor/appointments', label: 'Appointments', icon: CalendarDays },
     { to: '/doctor/settings', label: 'Settings', icon: Settings },
   ];
 
   const adminLinks = [
     { to: '/admin', label: 'Dashboard', icon: LayoutDashboard },
+    { to: '/admin/patients', label: 'Patients', icon: Users },
     { to: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
     { to: '/admin/villages', label: 'Villages', icon: MapPin },
     { to: '/admin/reports', label: 'Reports', icon: FileText },
+    { to: '/admin/appointments', label: 'Appointments', icon: CalendarDays },
+    { to: '/admin/follow-ups', label: 'Follow-ups', icon: RefreshCw },
     { to: '/admin/users', label: 'Users', icon: UserCheck },
     { to: '/admin/settings', label: 'Settings', icon: Settings },
   ];

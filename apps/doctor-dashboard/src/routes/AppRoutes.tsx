@@ -11,6 +11,7 @@ import { DoctorAssessments } from '../pages/doctor/Assessments';
 import { DoctorPredictions } from '../pages/doctor/Predictions';
 import { DoctorReferrals } from '../pages/doctor/Referrals';
 import { DoctorSettings } from '../pages/doctor/Settings';
+import { DoctorAppointments } from '../pages/doctor/Appointments';
 
 import { AdminDashboard } from '../pages/admin/Dashboard';
 import { AdminAnalytics } from '../pages/admin/Analytics';
@@ -18,6 +19,9 @@ import { AdminVillages } from '../pages/admin/Villages';
 import { AdminReports } from '../pages/admin/Reports';
 import { AdminUsers } from '../pages/admin/Users';
 import { AdminSettings } from '../pages/admin/Settings';
+import { AdminAppointments } from '../pages/admin/Appointments';
+import { AdminPatients } from '../pages/admin/Patients';
+import { AdminFollowUps } from '../pages/admin/FollowUps';
 
 import { ProtectedRoute } from './ProtectedRoute';
 
@@ -35,6 +39,7 @@ export const AppRoutes: React.FC = () => {
           <Route path="predictions" element={<DoctorPredictions />} />
           <Route path="referrals" element={<DoctorReferrals />} />
           <Route path="settings" element={<DoctorSettings />} />
+          <Route path="appointments" element={<DoctorAppointments />} />
         </Route>
       </Route>
 
@@ -46,6 +51,9 @@ export const AppRoutes: React.FC = () => {
           <Route path="reports" element={<AdminReports />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="settings" element={<AdminSettings />} />
+          <Route path="appointments" element={<AdminAppointments />} />
+          <Route path="patients" element={<AdminPatients />} />
+          <Route path="follow-ups" element={<AdminFollowUps />} />
         </Route>
       </Route>
 

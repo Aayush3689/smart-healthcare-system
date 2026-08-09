@@ -31,7 +31,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
     ports:
-      - "4000:4000"
+      - "4005:4000"
     depends_on:
       postgres:
         condition: service_healthy

@@ -14,8 +14,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ role }) => {
   const navigate = useNavigate();
   const user: User | null = authService.getCurrentUser();
 
-  const handleLogout = () => {
-    authService.logout();
+  const handleLogout = async () => {
+    await authService.logout();
     navigate('/login');
   };
 
