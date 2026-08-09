@@ -1,7 +1,6 @@
 import { Router } from "express";
 import {
   activeAccountMiddleware,
-  assessmentController,
   authController,
   authMiddleware,
   predictionController,
@@ -10,7 +9,7 @@ import { ashaRoutes } from "../modules/asha/index.js";
 import { assessmentRoutes } from "../modules/assessments/index.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { validationMiddleware } from "../middleware/validate.middleware.js";
-import { patientIdParamValidation } from "../modules/assessments/validation.js";
+import { patientRoutes } from "../modules/patients/index.js";
 import { predictionRoutes } from "../modules/predictions/index.js";
 import {
   patientPredictionQueryValidation,
@@ -79,22 +78,8 @@ phcApiRoutes.use("/me/follow-ups", phcFollowUpRoutes);
 phcApiRoutes.use("/me/villages", phcVillageRoutes);
 
 const patientApiRoutes = Router();
+patientApiRoutes.use("/", patientRoutes);
 patientApiRoutes.use("/", patientClinicalNoteRoutes);
-patientApiRoutes.get(
-  "/:patientId/assessments",
-  authMiddleware.authenticate,
-  activeAccountMiddleware.verify,
-  validationMiddleware.validateParams(patientIdParamValidation),
-  asyncHandler(assessmentController.patientHistory),
-);
-patientApiRoutes.get(
-  "/:patientId/predictions",
-  authMiddleware.authenticate,
-  activeAccountMiddleware.verify,
-  validationMiddleware.validateParams(predictionPatientParamValidation),
-  validationMiddleware.validateQuery(patientPredictionQueryValidation),
-  asyncHandler(predictionController.patient),
-);
 
 export class ApiRoutes {
   public readonly router = Router();

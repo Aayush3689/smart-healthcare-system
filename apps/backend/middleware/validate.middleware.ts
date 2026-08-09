@@ -1,9 +1,9 @@
 import type { NextFunction, Request, RequestHandler, Response } from "express";
-import type { ZodType } from "zod";
+import type { ZodTypeAny } from "zod";
 import { AppError } from "../utils/app-error.js";
 
 export class ValidationMiddleware {
-  public validate<T>(schema: ZodType<T>): RequestHandler {
+  public validate(schema: ZodTypeAny): RequestHandler {
     return (request: Request, _response: Response, next: NextFunction): void => {
       const result = schema.safeParse(request.body);
       if (!result.success) {
@@ -23,7 +23,7 @@ export class ValidationMiddleware {
       next();
     };
   }
-  public validateQuery<T>(schema: ZodType<T>): RequestHandler {
+  public validateQuery(schema: ZodTypeAny): RequestHandler {
     return (request: Request, _response: Response, next: NextFunction): void => {
       const result = schema.safeParse(request.query);
       if (!result.success)
@@ -48,7 +48,7 @@ export class ValidationMiddleware {
     };
   }
 
-  public validateParams<T>(schema: ZodType<T>): RequestHandler {
+  public validateParams(schema: ZodTypeAny): RequestHandler {
     return (request: Request, _response: Response, next: NextFunction): void => {
       const result = schema.safeParse(request.params);
       if (!result.success) {

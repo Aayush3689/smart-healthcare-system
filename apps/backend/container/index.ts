@@ -36,6 +36,7 @@ import { AuthRepository } from "../modules/auth/repository.js";
 import { AuthService } from "../modules/auth/service.js";
 import { PatientRepository } from "../modules/patients/repository.js";
 import { PatientService } from "../modules/patients/service.js";
+import { PatientController } from "../modules/patients/controller.js";
 import { PredictionRepository } from "../modules/predictions/repository.js";
 import { PredictionService } from "../modules/predictions/service.js";
 import { PredictionController } from "../modules/predictions/controller.js";
@@ -60,7 +61,8 @@ export const accessPolicy = new AccessPolicy(prisma);
 export const activeAccountMiddleware = new ActiveAccountMiddleware(accessPolicy);
 export const healthService = new HealthService(new HealthRepository(prisma));
 export const healthController = new HealthController(healthService);
-const patientService = new PatientService(new PatientRepository(prisma), accessPolicy);
+export const patientService = new PatientService(new PatientRepository(prisma), accessPolicy);
+export const patientController = new PatientController(patientService);
 export const predictionService = new PredictionService(
   new PredictionRepository(prisma),
   accessPolicy,
