@@ -11,6 +11,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
+    "prisma:seed:prod": "node dist/prisma/seed.js",
     "test": "tsx --test tests/**/*.test.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
