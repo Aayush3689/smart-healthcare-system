@@ -1,7 +1,10 @@
 # Stage 1: Build the React/Vite app
-FROM node:18-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
+
+ARG VITE_API_BASE_URL=/api/v1
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 
 # Copy dependency definitions
 COPY package*.json ./

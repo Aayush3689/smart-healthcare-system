@@ -44,6 +44,7 @@ import {
 } from "../modules/follow-ups/index.js";
 import { phcRoutes } from "../modules/phcs/index.js";
 import { phcDashboardRoutes } from "../modules/phc-dashboard/index.js";
+import { healthRoutes } from "../modules/health/index.js";
 import { ashaVillageRoutes, phcVillageRoutes, villageRoutes } from "../modules/villages/index.js";
 
 const ashaApiRoutes = Router();
@@ -114,4 +115,8 @@ export class ApiRoutes {
     this.router.use("/sync", syncRoutes);
   }
 }
-export const routes = new ApiRoutes().router;
+const rootRoutes = Router();
+rootRoutes.use("/health", healthRoutes);
+rootRoutes.use("/api/v1", new ApiRoutes().router);
+
+export const routes = rootRoutes;

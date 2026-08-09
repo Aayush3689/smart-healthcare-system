@@ -19,6 +19,9 @@ import { ClinicalNoteService } from "../modules/clinical-notes/service.js";
 import { FollowUpController } from "../modules/follow-ups/controller.js";
 import { FollowUpRepository } from "../modules/follow-ups/repository.js";
 import { FollowUpService } from "../modules/follow-ups/service.js";
+import { HealthController } from "../modules/health/controller.js";
+import { HealthRepository } from "../modules/health/repository.js";
+import { HealthService } from "../modules/health/service.js";
 import { PhcController } from "../modules/phcs/controller.js";
 import { PhcRepository } from "../modules/phcs/repository.js";
 import { PhcService } from "../modules/phcs/service.js";
@@ -55,6 +58,8 @@ export const authController = new AuthController(
 export const authMiddleware = new AuthMiddleware(jwtService);
 export const accessPolicy = new AccessPolicy(prisma);
 export const activeAccountMiddleware = new ActiveAccountMiddleware(accessPolicy);
+export const healthService = new HealthService(new HealthRepository(prisma));
+export const healthController = new HealthController(healthService);
 const patientService = new PatientService(new PatientRepository(prisma), accessPolicy);
 export const predictionService = new PredictionService(
   new PredictionRepository(prisma),

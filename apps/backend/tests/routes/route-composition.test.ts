@@ -43,3 +43,9 @@ test("nested role routes are composed below their resource router", async () => 
   assert.match(source, /phcApiRoutes\.use\("\/me\/villages"/);
   assert.match(source, /ashaApiRoutes\.use\("\/me\/village"/);
 });
+
+test("health routes are composed publicly outside the versioned API", async () => {
+  const source = await readFile(indexUrl, "utf8");
+  assert.match(source, /rootRoutes\.use\("\/health", healthRoutes\)/);
+  assert.match(source, /rootRoutes\.use\("\/api\/v1", new ApiRoutes\(\)\.router\)/);
+});
